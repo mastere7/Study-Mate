@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+
+  html.dark body {
+    background-color: #080c14;
+    color: #f1f5f9;
+  }
+
+  html:not(.dark) body {
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  body {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  /* Custom Sleek Scrollbars */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .dark ::-webkit-scrollbar-track {
+    background: #0f172a;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f1f5f9;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+
+  ::selection {
+    background-color: rgba(99, 102, 241, 0.35);
+    color: #ffffff;
+  }
+}
+
+/* Ambient Study Theme Glow Utilities */
+.study-glow-indigo {
+  box-shadow: 0 0 25px -5px rgba(99, 102, 241, 0.18);
+}
+
+.study-glow-emerald {
+  box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.18);
+}
+
+.study-glow-purple {
+  box-shadow: 0 0 25px -5px rgba(168, 85, 247, 0.18);
+}

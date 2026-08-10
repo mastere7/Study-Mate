@@ -1,0 +1,6 @@
+{
+  "name": "StudyMate - AI Study Companion",
+  "description": "A comprehensive, free AI study companion for students to learn difficult concepts, manage notes, analyze documents, solve questions via OCR, create flashcards, auto-generate quizzes, organize study plans, track Pomodoro focus, and monitor progress.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
