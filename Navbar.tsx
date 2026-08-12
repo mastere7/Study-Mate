@@ -444,15 +444,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* User Profile Avatar Pill */}
           <button
             onClick={handleOpenAuth}
-            className="flex items-center gap-2 p-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-900/50 hover:opacity-90 transition-all"
+            className="flex items-center gap-2 py-1.5 px-2.5 sm:px-3 rounded-full bg-indigo-50/90 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800/80 hover:bg-indigo-100 dark:hover:bg-indigo-900 transition-all shadow-xs cursor-pointer group"
+            title={`Logged in as ${user.name} - Open Profile`}
           >
             <img
               src={user.avatarUrl || DEFAULT_USER.avatarUrl}
               alt={user.name}
-              className="w-8 h-8 rounded-full object-cover border-2 border-white dark:border-slate-900 shadow-sm"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover shrink-0"
             />
-            <span className="hidden sm:inline-block pr-3 font-bold text-xs text-indigo-950 dark:text-indigo-200">
-              {user.name.split(" ")[0]}
+            <span className="font-extrabold text-xs text-indigo-950 dark:text-indigo-200 max-w-[110px] sm:max-w-[160px] truncate">
+              {user.name}
             </span>
           </button>
         </div>
