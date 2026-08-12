@@ -475,63 +475,63 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         const isSaved = savedTipIds.includes(currentTip.id);
 
         return (
-          <div className="flex flex-col justify-between h-full space-y-3.5 relative z-10">
-            {/* Header: Title, Evidence Tag & Controls */}
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
+          <div className="flex flex-col justify-between h-full space-y-4 relative z-10">
+            {/* Header: Title, Evidence Tag & Header Control Buttons */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0 shadow-xs">
                   <Lightbulb className="w-5 h-5 animate-pulse" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-slate-900 dark:text-white font-black text-sm sm:text-base">
+                    <h3 className="text-slate-900 dark:text-white font-black text-sm sm:text-base tracking-tight">
                       Quick Tip of the Day
                     </h3>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-[10px] font-extrabold uppercase tracking-wider border border-amber-300/60 dark:border-amber-700/60">
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] font-black uppercase tracking-wider border border-amber-400/40">
                       Evidence-Based
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                     Technique {(activeTipIndex % filteredTips.length) + 1} of {filteredTips.length} • {currentTip.category}
                   </p>
                 </div>
               </div>
 
-              {/* Action Buttons: Next Tip & Save */}
-              <div className="flex items-center gap-1.5">
+              {/* Action Buttons: Save & Next Tip */}
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => toggleSaveTip(currentTip.id)}
-                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
                     isSaved
-                      ? "bg-amber-500 text-slate-950 border-amber-400 shadow-xs font-black"
-                      : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+                      ? "bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400 font-black"
+                      : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
                   }`}
                   title={isSaved ? "Saved to favorites" : "Save this tip"}
                 >
-                  {isSaved ? <BookmarkCheck className="w-3.5 h-3.5 text-slate-950" /> : <Bookmark className="w-3.5 h-3.5" />}
-                  <span className="text-[11px]">{isSaved ? "Saved" : "Save"}</span>
+                  {isSaved ? <BookmarkCheck className="w-4 h-4 text-slate-950" /> : <Bookmark className="w-4 h-4 text-slate-500" />}
+                  <span className="text-xs">{isSaved ? "Saved" : "Save"}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleNextTip}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-200 border border-amber-500/30 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-950 dark:text-amber-100 border border-amber-400/40 text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                   title="Show another study technique"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span className="text-[11px]">Next Tip</span>
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />
+                  <span className="text-xs">Next Tip</span>
                 </button>
               </div>
             </div>
 
-            {/* Tip Detail Card */}
-            <div className="space-y-2.5 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs p-4 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 shadow-xs">
-              <div className="flex items-start justify-between gap-2">
+            {/* Tip Detail Card Body */}
+            <div className="space-y-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xs p-4 sm:p-5 rounded-2xl border border-amber-200/90 dark:border-amber-900/60 shadow-xs">
+              <div className="flex items-start justify-between gap-3">
                 <h4 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white leading-snug">
                   {currentTip.title}
                 </h4>
-                <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold border border-indigo-200 dark:border-indigo-800/80 shrink-0">
+                <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold border border-indigo-200 dark:border-indigo-800 shrink-0">
                   {currentTip.category}
                 </span>
               </div>
@@ -540,22 +540,22 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 {currentTip.summary}
               </p>
 
-              {/* Science / Evidence Box */}
-              <div className="p-3 rounded-xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/20 text-amber-950 dark:text-amber-200 text-xs space-y-1">
-                <div className="font-black flex items-center gap-1 text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                  <BrainCircuit className="w-3.5 h-3.5" />
+              {/* Cognitive Science Evidence */}
+              <div className="p-3.5 rounded-xl bg-amber-500/10 dark:bg-amber-950/50 border border-amber-500/20 text-amber-950 dark:text-amber-200 text-xs space-y-1">
+                <div className="font-black flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                  <BrainCircuit className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                   <span>Cognitive Research Evidence:</span>
                 </div>
-                <p className="italic text-[11px] leading-relaxed">
+                <p className="italic text-[11px] leading-relaxed font-medium">
                   "{currentTip.evidence}"
                 </p>
               </div>
             </div>
 
-            {/* Category Filter Pills & Quick Action */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+            {/* Bottom Controls: Category Filter Pills & Main Call-To-Action Button */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
               {/* Category Pills */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none max-w-full">
                 {(["All", "Memory & Recall", "Focus & Time", "Exam Prep", "Learning Method"] as const).map((cat) => (
                   <button
                     key={cat}
@@ -564,10 +564,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       setSelectedTipCategory(cat);
                       setActiveTipIndex(0);
                     }}
-                    className={`px-2 py-1 rounded-xl text-[10px] font-bold whitespace-nowrap transition-all border cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all border cursor-pointer ${
                       selectedTipCategory === cat
-                        ? "bg-amber-500 text-slate-950 border-amber-400 font-black shadow-xs"
-                        : "bg-white/60 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border-slate-200/80 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700"
+                        ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm"
+                        : "bg-white/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-amber-100/50 dark:hover:bg-slate-700"
                     }`}
                   >
                     {cat}
@@ -575,7 +575,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 ))}
               </div>
 
-              {/* Action Button */}
+              {/* Main Tip Action Button */}
               <button
                 type="button"
                 onClick={() => {
@@ -586,10 +586,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     navigate(currentTip.actionScreen);
                   }
                 }}
-                className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm shadow-md shadow-amber-500/25 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer active:scale-95"
               >
                 <span>{currentTip.actionText}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -1097,38 +1097,36 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   : ""
               } ${isCustomizingLayout ? "hover:border-indigo-400 cursor-grab active:cursor-grabbing" : ""}`}
             >
-              {/* Widget Drag & Priority Header Toolbar */}
-              <div
-                className={`flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-800/80 transition-opacity ${
-                  isCustomizingLayout ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
-                  <GripVertical className="w-4 h-4 cursor-grab" />
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    #{index + 1} {WIDGET_TITLES[widgetId]}
-                  </span>
-                </div>
+              {/* Widget Drag & Priority Header Toolbar (Only shown in customize mode or subtle hover) */}
+              {isCustomizingLayout ? (
+                <div className="flex items-center justify-between pb-2 mb-3 border-b border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/50 dark:bg-indigo-950/40 p-2 rounded-xl">
+                  <div className="flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300 font-bold">
+                    <GripVertical className="w-4 h-4 cursor-grab" />
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                      #{index + 1} {WIDGET_TITLES[widgetId]}
+                    </span>
+                  </div>
 
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => moveWidget(widgetId, "up")}
-                    disabled={index === 0}
-                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 disabled:opacity-30 transition-all"
-                    title="Move Up"
-                  >
-                    <ArrowUp className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={() => moveWidget(widgetId, "down")}
-                    disabled={index === widgetOrder.length - 1}
-                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 disabled:opacity-30 transition-all"
-                    title="Move Down"
-                  >
-                    <ArrowDown className="w-3 h-3" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => moveWidget(widgetId, "up")}
+                      disabled={index === 0}
+                      className="p-1 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-indigo-100 dark:hover:bg-indigo-900 disabled:opacity-30 transition-all cursor-pointer shadow-xs"
+                      title="Move Up"
+                    >
+                      <ArrowUp className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => moveWidget(widgetId, "down")}
+                      disabled={index === widgetOrder.length - 1}
+                      className="p-1 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-indigo-100 dark:hover:bg-indigo-900 disabled:opacity-30 transition-all cursor-pointer shadow-xs"
+                      title="Move Down"
+                    >
+                      <ArrowDown className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {/* Widget Content */}
               {renderWidgetContent(widgetId)}
