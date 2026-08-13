@@ -45,6 +45,7 @@ interface NavbarProps {
   onToggleSidebar?: () => void;
   isMobileMenuOpen?: boolean;
   onToggleMobileMenu?: () => void;
+  isFirebaseAuthenticated?: boolean;
   // Legacy or alternative props support
   onOpenProfile?: () => void;
   onOpenAuth?: () => void;
@@ -72,6 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleSidebar,
   isMobileMenuOpen = false,
   onToggleMobileMenu,
+  isFirebaseAuthenticated = false,
   onOpenProfile,
   onNavigateScreen,
   onToggleTheme,
@@ -441,20 +443,36 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* User Profile Avatar Pill */}
-          <button
-            onClick={handleOpenAuth}
-            className="flex items-center gap-2 p-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-900/50 hover:opacity-90 transition-all"
-          >
-            <img
-              src={user.avatarUrl || DEFAULT_USER.avatarUrl}
-              alt={user.name}
-              className="w-8 h-8 rounded-full object-cover border-2 border-white dark:border-slate-900 shadow-sm"
-            />
-            <span className="hidden sm:inline-block pr-3 font-bold text-xs text-indigo-950 dark:text-indigo-200">
-              {user.name.split(" ")[0]}
-            </span>
-          </button>
+          {/* User Profile Avatar Pill / Sign In Button */}
+          {isFirebaseAuthenticated ? (
+            <button
+              onClick={handleOpenAuth}
+              className="flex items-center gap-2 py-1.5 px-2.5 sm:px-3 rounded-full bg-indigo-50/90 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800/80 hover:bg-indigo-100 dark:hover:bg-indigo-900 transition-all shadow-xs cursor-pointer group"
+              title={`Logged in as ${user.name} (Cloud Synced) - Open Profile`}
+            >
+              <div className="relative">
+                <img
+                  src={user.avatarUrl || DEFAULT_USER.avatarUrl}
+                  alt={user.name}
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover shrink-0"
+                />
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-slate-900" />
+              </div>
+              <span className="font-extrabold text-xs text-indigo-950 dark:text-indigo-200 max-w-[110px] sm:max-w-[160px] truncate">
+                {user.name}
+              </span>
+            </button>
+          ) : (
+            <button
+              onClick={handleOpenAuth}
+              className="flex items-center gap-1.5 py-1.5 px-3 sm:px-4 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
+              title="Create Account or Sign In"
+            >
+              <UserIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign In / Register</span>
+              <span className="sm:hidden">Sign In</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

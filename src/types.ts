@@ -9,6 +9,9 @@ export interface User {
   avatarUrl?: string;
   gradeLevel?: string; // e.g., "Undergraduate", "High School Senior", "Graduate"
   major?: string; // e.g., "Computer Science", "Medicine", "Engineering"
+  studyGoal?: string;
+  streakDays?: number;
+  totalPoints?: number;
   createdDate: string;
   dailyGoalHours: number; // e.g. 2.5
   notificationSound: boolean;

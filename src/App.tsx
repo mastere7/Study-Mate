@@ -46,6 +46,15 @@ import {
 import { Plus, Trash2, X, ArrowLeft, Home, ChevronRight } from "lucide-react";
 import { pushNotificationService } from "./services/pushNotificationService";
 import { SUPPORTED_LANGUAGES } from "./services/i18n";
+import {
+  auth,
+  onAuthStateChanged,
+  fetchUserData,
+  syncUserDoc,
+  syncFullCollection,
+  syncItemToFirestore,
+  deleteItemFromFirestore,
+} from "./services/firebase";
 
 const tabNames: Record<string, string> = {
   dashboard: "Home Dashboard",
@@ -131,6 +140,91 @@ export default function App() {
     () => storageService.getGroupSessions()
   );
 
+  // Firebase Authentication State
+  const [isFirebaseAuthenticated, setIsFirebaseAuthenticated] = useState<boolean>(() => Boolean(auth.currentUser));
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+
+  // Listen to Firebase Auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setIsFirebaseAuthenticated(true);
+        // Fetch user data from Firestore
+        const data = await fetchUserData(firebaseUser.uid);
+        if (data) {
+          if (data.profile) {
+            setUser(data.profile);
+            storageService.saveUser(data.profile);
+          } else {
+            const fallbackProfile: UserProfile = {
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Student User",
+              email: firebaseUser.email || "",
+              avatarUrl:
+                firebaseUser.photoURL ||
+                `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+                  firebaseUser.displayName || firebaseUser.email || "Student"
+                )}`,
+              gradeLevel: "Undergraduate Student",
+              major: "General Studies",
+              createdDate: new Date().toISOString(),
+              dailyGoalHours: 3.0,
+              notificationSound: true,
+              reminderFrequency: "15m",
+              quietHoursStart: "23:00",
+              quietHoursEnd: "07:00",
+              themePreference: "system",
+            };
+            setUser(fallbackProfile);
+            storageService.saveUser(fallbackProfile);
+          }
+
+          if (data.subjects && data.subjects.length > 0) {
+            setSubjects(data.subjects);
+            storageService.saveSubjects(data.subjects);
+          }
+          if (data.notes && data.notes.length > 0) {
+            setNotes(data.notes);
+            storageService.saveNotes(data.notes);
+          }
+          if (data.documents && data.documents.length > 0) {
+            setDocuments(data.documents);
+            storageService.saveDocuments(data.documents);
+          }
+          if (data.assignments && data.assignments.length > 0) {
+            setAssignments(data.assignments);
+            storageService.saveAssignments(data.assignments);
+          }
+          if (data.schedules && data.schedules.length > 0) {
+            setSchedules(data.schedules);
+            storageService.saveSchedules(data.schedules);
+          }
+          if (data.quizzes && data.quizzes.length > 0) {
+            setQuizzes(data.quizzes);
+            storageService.saveQuizzes(data.quizzes);
+          }
+          if (data.decks && data.decks.length > 0) {
+            setDecks(data.decks);
+            storageService.saveDecks(data.decks);
+          }
+          if (data.sessions && data.sessions.length > 0) {
+            setSessions(data.sessions);
+            storageService.saveSessions(data.sessions);
+          }
+          if (data.notifications && data.notifications.length > 0) {
+            setNotifications(data.notifications);
+            storageService.saveNotifications(data.notifications);
+          }
+        }
+      } else {
+        setIsFirebaseAuthenticated(false);
+      }
+      setIsAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Cross-component Deep-linking pre-fill parameters
   const [activeSubjectFilter, setActiveSubjectFilter] = useState<string | null>(null);
   const [quizPreTopic, setQuizPreTopic] = useState("");
@@ -192,6 +286,9 @@ export default function App() {
           setNotifications((prev) => {
             const updated = [newNotif, ...prev];
             storageService.saveNotifications(updated);
+            if (auth.currentUser) {
+              syncFullCollection(auth.currentUser.uid, "notifications", updated);
+            }
             return updated;
           });
         }
@@ -207,50 +304,77 @@ export default function App() {
     setThemeMode((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
-  // Persistence Handlers
+  // Persistence Handlers with Firestore Cloud Synchronization
   const handleSaveUser = (updated: UserProfile) => {
     setUser(updated);
     storageService.saveUser(updated);
+    if (auth.currentUser) {
+      syncUserDoc(auth.currentUser.uid, updated);
+    }
   };
 
   const handleSaveNotes = (updated: Note[]) => {
     setNotes(updated);
     storageService.saveNotes(updated);
+    if (auth.currentUser) {
+      syncFullCollection(auth.currentUser.uid, "notes", updated);
+    }
   };
 
   const handleSaveDocuments = (updated: DocumentItem[]) => {
     setDocuments(updated);
     storageService.saveDocuments(updated);
+    if (auth.currentUser) {
+      syncFullCollection(auth.currentUser.uid, "documents", updated);
+    }
   };
 
   const handleSaveQuizzes = (updated: Quiz[]) => {
     setQuizzes(updated);
     storageService.saveQuizzes(updated);
+    if (auth.currentUser) {
+      syncFullCollection(auth.currentUser.uid, "quizzes", updated);
+    }
   };
 
   const handleSaveDecks = (updated: FlashcardDeck[]) => {
     setDecks(updated);
     storageService.saveDecks(updated);
+    if (auth.currentUser) {
+      syncFullCollection(auth.currentUser.uid, "decks", updated);
+    }
   };
 
   const handleSaveAssignments = (updated: Assignment[]) => {
     setAssignments(updated);
     storageService.saveAssignments(updated);
+    if (auth.currentUser) {
+      syncFullCollection(auth.currentUser.uid, "assignments", updated);
+    }
   };
 
   const handleSaveSchedules = (updated: StudySchedule[]) => {
     setSchedules(updated);
     storageService.saveSchedules(updated);
+    if (auth.currentUser) {
+      syncFullCollection(auth.currentUser.uid, "schedules", updated);
+    }
   };
 
   const handleSaveSessions = (updated: PomodoroSession[]) => {
     setSessions(updated);
     storageService.saveSessions(updated);
+    if (auth.currentUser) {
+      syncFullCollection(auth.currentUser.uid, "sessions", updated);
+    }
   };
 
   const handleSaveNotifications = (updated: AppNotification[]) => {
     setNotifications(updated);
     storageService.saveNotifications(updated);
+    if (auth.currentUser) {
+      syncFullCollection(auth.currentUser.uid, "notifications", updated);
+    }
   };
 
   const handleSaveGroupSessions = (updated: GroupStudySession[]) => {
@@ -270,6 +394,9 @@ export default function App() {
     const updated = [...subjects, newSub];
     setSubjects(updated);
     storageService.saveSubjects(updated);
+    if (auth.currentUser) {
+      syncItemToFirestore(auth.currentUser.uid, "subjects", newSub.id, newSub);
+    }
     setNewSubName("");
   };
 
@@ -277,6 +404,9 @@ export default function App() {
     const updated = subjects.filter((s) => s.id !== id);
     setSubjects(updated);
     storageService.saveSubjects(updated);
+    if (auth.currentUser) {
+      deleteItemFromFirestore(auth.currentUser.uid, "subjects", id);
+    }
   };
 
   // Cross-Navigation Generators
@@ -315,6 +445,7 @@ export default function App() {
         onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         isMobileMenuOpen={isMobileMenuOpen}
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        isFirebaseAuthenticated={isFirebaseAuthenticated}
         onNavigateScreen={handleSelectTab}
       />
 
@@ -515,8 +646,18 @@ export default function App() {
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         onUpdateUser={handleSaveUser}
+        isFirebaseAuthenticated={isFirebaseAuthenticated}
         onLogout={() => {
           handleSaveUser(DEFAULT_USER);
+          setSubjects(DEFAULT_SUBJECTS);
+          setNotes(DEFAULT_NOTES);
+          setDocuments(DEFAULT_DOCUMENTS);
+          setQuizzes(DEFAULT_QUIZZES);
+          setDecks(DEFAULT_DECKS);
+          setAssignments(DEFAULT_ASSIGNMENTS);
+          setSchedules(DEFAULT_SCHEDULES);
+          setSessions(DEFAULT_SESSIONS);
+          setNotifications(DEFAULT_NOTIFICATIONS);
           setIsAuthOpen(false);
         }}
       />
