@@ -7,6 +7,7 @@ import {
   GoogleAuthProvider,
   signOut,
   sendPasswordResetEmail,
+  sendEmailVerification,
   updateProfile,
   onAuthStateChanged,
   User as FirebaseUser,
@@ -72,6 +73,13 @@ export const registerWithEmail = async (email: string, pass: string, name: strin
     await updateProfile(cred.user, { displayName: name });
   }
 
+  // Send email verification to the newly registered student
+  try {
+    await sendEmailVerification(cred.user);
+  } catch (err) {
+    console.warn("Could not send initial verification email:", err);
+  }
+
   const newUserProfile: User = {
     id: cred.user.uid,
     name: name || email.split("@")[0],
@@ -94,6 +102,14 @@ export const registerWithEmail = async (email: string, pass: string, name: strin
   await seedInitialUserData(cred.user.uid);
 
   return newUserProfile;
+};
+
+export const sendVerificationEmail = async () => {
+  if (auth.currentUser) {
+    await sendEmailVerification(auth.currentUser);
+  } else {
+    throw new Error("No active user signed in.");
+  }
 };
 
 export const loginWithEmail = async (email: string, pass: string) => {

@@ -11,9 +11,8 @@ import {
   Check,
   AlertCircle,
   Loader2,
-  BookOpen,
-  Sparkles,
-  ShieldCheck,
+  CheckCircle2,
+  Send,
 } from "lucide-react";
 import { UserProfile } from "../../types";
 import {
@@ -23,6 +22,7 @@ import {
   loginWithGoogle,
   logoutUser,
   resetUserPassword,
+  sendVerificationEmail,
   syncUserDoc,
 } from "../../services/firebase";
 
@@ -58,8 +58,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   
   // UI feedback states
   const [isLoading, setIsLoading] = useState(false);
+  const [isResendingEmail, setIsResendingEmail] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [registeredEmailSent, setRegisteredEmailSent] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -82,6 +84,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const clearMessages = () => {
     setErrorMessage(null);
     setSuccessMessage(null);
+    setRegisteredEmailSent(null);
   };
 
   const parseFirebaseError = (err: any): string => {
@@ -92,6 +95,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return "Invalid email or password. Please check your credentials.";
     }
     if (code === "auth/weak-password") return "Password should be at least 6 characters.";
+    if (code === "auth/too-many-requests") return "Too many requests. Please wait a moment before trying again.";
     if (code === "auth/popup-closed-by-user") return "Google Sign-In popup was closed before finishing.";
     return err?.message || "An unexpected authentication error occurred. Please try again.";
   };
@@ -148,17 +152,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // 3. Email Register
+  // 3. Email Register (Sends verification email upon creation)
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
 
-    if (!name.trim()) {
-      setErrorMessage("Please enter your full name.");
-      return;
-    }
     if (!email.trim()) {
-      setErrorMessage("Please enter your email.");
+      setErrorMessage("Please enter your email address.");
       return;
     }
     if (password.length < 6) {
@@ -172,22 +172,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setIsLoading(true);
     try {
+      const targetEmail = email.trim();
+      const defaultDisplayName = targetEmail.split("@")[0] || "Student";
       const newProfile = await registerWithEmail(
-        email.trim(),
+        targetEmail,
         password,
-        name.trim(),
-        gradeLevel.trim() || "Undergraduate Student",
-        major.trim() || "General Studies"
+        defaultDisplayName,
+        "Undergraduate Student",
+        "General Studies"
       );
       onUpdateUser(newProfile);
-      setSuccessMessage("Account created successfully! Welcome to StudyMate.");
-      setTimeout(() => {
-        onClose();
-      }, 1000);
+      setRegisteredEmailSent(targetEmail);
+      setSuccessMessage(`Account created! A verification email has been sent to ${targetEmail}.`);
     } catch (err: any) {
       setErrorMessage(parseFirebaseError(err));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Resend Email Verification
+  const handleResendVerification = async () => {
+    clearMessages();
+    setIsResendingEmail(true);
+    try {
+      await sendVerificationEmail();
+      setSuccessMessage("Verification link sent! Please check your inbox and spam folder.");
+    } catch (err: any) {
+      setErrorMessage(parseFirebaseError(err));
+    } finally {
+      setIsResendingEmail(false);
     }
   };
 
@@ -345,7 +359,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {/* VIEW 1: Active Student Profile */}
+        {/* VIEW 1: Active Student Profile (Visible when viewing profile settings) */}
         {activeTab === "profile" && (
           <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
             {/* Gamification Stats Bar */}
@@ -417,6 +431,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 className="mt-1 w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
+
+            {/* Email Verification Status Card */}
+            {auth.currentUser?.email && (
+              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{auth.currentUser.email}</span>
+                  </span>
+                  {auth.currentUser.emailVerified ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-extrabold text-[10px]">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Verified
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 font-extrabold text-[10px]">
+                      Unverified
+                    </span>
+                  )}
+                </div>
+
+                {!auth.currentUser.emailVerified && (
+                  <div className="flex items-center justify-between pt-1">
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Verify your email to secure your study records.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={isResendingEmail}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    >
+                      {isResendingEmail ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Send className="w-3 h-3" />
+                      )}
+                      <span>Resend Link</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
               <button
@@ -534,125 +591,151 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {/* VIEW 3: Register */}
+        {/* VIEW 3: Register (Simplified strictly for Email & Password with Email Verification) */}
         {activeTab === "register" && (
           <div className="space-y-4">
-            {/* Google Sign-Up Button */}
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-all shadow-xs"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
-                />
-              </svg>
-              <span>Sign Up with Google</span>
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">or sign up with email</span>
-              <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
-            </div>
-
-            <form onSubmit={handleRegister} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Alex Morgan"
-                  className="mt-1 w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300">Student Email</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="alex.morgan@university.edu"
-                  className="mt-1 w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Degree / Year</label>
-                  <input
-                    type="text"
-                    value={gradeLevel}
-                    onChange={(e) => setGradeLevel(e.target.value)}
-                    placeholder="Undergraduate"
-                    className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+            {registeredEmailSent ? (
+              <div className="p-5 rounded-3xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 text-center space-y-3.5 animate-in fade-in">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30">
+                  <Mail className="w-6 h-6 animate-bounce" />
                 </div>
                 <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Major</label>
-                  <input
-                    type="text"
-                    value={major}
-                    onChange={(e) => setMajor(e.target.value)}
-                    placeholder="e.g. Biology"
-                    className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <h4 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
+                    Verify Your Email
+                  </h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                    We sent a verification link to:
+                  </p>
+                  <p className="font-bold text-xs text-indigo-600 dark:text-indigo-400 mt-0.5 break-all">
+                    {registeredEmailSent}
+                  </p>
+                </div>
+
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed bg-white/70 dark:bg-slate-900/70 p-3 rounded-2xl border border-indigo-100 dark:border-indigo-900/30">
+                  Please check your inbox and click the verification link to confirm your student email. Don't forget to check your spam/junk folder if it doesn't arrive immediately.
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={isResendingEmail}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-50 transition-colors"
+                  >
+                    {isResendingEmail ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    <span>Resend Email</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("profile");
+                      clearMessages();
+                    }}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-md shadow-indigo-500/20 hover:bg-indigo-700 transition-colors"
+                  >
+                    Continue to Profile
+                  </button>
                 </div>
               </div>
+            ) : (
+              <>
+                {/* Google Sign-Up Button */}
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                  className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-all shadow-xs"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                    />
+                  </svg>
+                  <span>Sign Up with Google</span>
+                </button>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min 6 chars"
-                    className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">or sign up with email</span>
+                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
                 </div>
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Confirm Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Repeat password"
-                    className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full flex items-center justify-center gap-2 py-3 mt-2 rounded-2xl bg-indigo-600 text-white font-bold text-xs shadow-md shadow-indigo-500/20 hover:bg-indigo-700 transition-colors"
-              >
-                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>Create Free Student Account</span>
-              </button>
-            </form>
+                <form onSubmit={handleRegister} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Student Email</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="student@university.edu"
+                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Password</span>
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Min 6 characters"
+                        className="mt-1 w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Confirm Password</span>
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Repeat password"
+                        className="mt-1 w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-2 py-3 mt-2 rounded-2xl bg-indigo-600 text-white font-bold text-xs shadow-md shadow-indigo-500/20 hover:bg-indigo-700 transition-colors"
+                  >
+                    {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <span>Create Free Student Account</span>
+                  </button>
+                </form>
+              </>
+            )}
           </div>
         )}
 
