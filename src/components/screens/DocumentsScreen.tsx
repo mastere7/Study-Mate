@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { DocumentItem } from "../../types";
 import { apiService } from "../../services/api";
+import { storageService } from "../../services/storage";
 
 interface DocumentsScreenProps {
   documents: DocumentItem[];
@@ -64,6 +65,11 @@ export const DocumentsScreen: React.FC<DocumentsScreenProps> = ({
       const updated = [newDoc, ...documents];
       onSaveDocuments(updated);
       setSelectedDoc(newDoc);
+      storageService.addActivity({
+        type: "note_created",
+        title: `Uploaded Document: ${newDoc.title}`,
+        description: `Uploaded ${newDoc.fileType.toUpperCase()} file (${newDoc.fileSize})`,
+      });
     } catch (err) {
       console.error(err);
     } finally {

@@ -18,12 +18,9 @@ import {
   Sparkles,
   Zap,
   Timer,
-  HelpCircle,
-  Radio,
   BookOpen,
   Share2,
   X,
-  ShieldCheck,
   Send,
   Flame,
   Lightbulb,
@@ -33,8 +30,16 @@ import {
   Maximize2,
   Minimize2,
   Tv,
-  Video,
-  VideoOff,
+  Trash2,
+  Coffee,
+  Headphones,
+  Sliders,
+  AlertCircle,
+  HelpCircle,
+  Radio,
+  Clock,
+  Layers,
+  Sparkle,
 } from "lucide-react";
 import {
   GroupStudySession,
@@ -47,6 +52,7 @@ import {
   Quiz,
   FlashcardDeck,
 } from "../../types";
+import { audioSynthService } from "../../services/audioSynth";
 
 interface GroupStudyScreenProps {
   user: UserProfile;
@@ -74,15 +80,19 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   const [joinCodeError, setJoinCodeError] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterType, setFilterType] = useState<string>("all");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [createTitle, setCreateTitle] = useState<string>("");
-  const [createSubjectId, setCreateSubjectId] = useState<string>(subjects[0]?.id || "");
+  const [createSubjectId, setCreateSubjectId] = useState<string>(subjects[0]?.id || "custom");
+  const [createCustomSubjectName, setCreateCustomSubjectName] = useState<string>("");
   const [createRoomType, setCreateRoomType] = useState<GroupRoomType>("pomodoro");
   const [createMaxParticipants, setCreateMaxParticipants] = useState<number>(8);
   const [createDescription, setCreateDescription] = useState<string>("");
   const [createCustomCode, setCreateCustomCode] = useState<string>("");
+  const [createTimerDuration, setCreateTimerDuration] = useState<number>(25);
+  const [createAmbientSound, setCreateAmbientSound] = useState<string>("none");
 
   // Active Room state
   const [activeRoomTab, setActiveRoomTab] = useState<"timer" | "notes" | "chat" | "screenshare">("timer");
@@ -90,6 +100,8 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   const [chatInput, setChatInput] = useState<string>("");
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  const [activeAmbient, setActiveAmbient] = useState<string>("none");
+  const [ambientVolume, setAmbientVolume] = useState<number>(0.3);
 
   // Screen Share State
   const [isSharingScreen, setIsSharingScreen] = useState<boolean>(false);
@@ -106,6 +118,11 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   const [timerSecondsLeft, setTimerSecondsLeft] = useState<number>(25 * 60);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const activeRoom = groupSessions.find((r) => r.id === activeRoomId);
 
@@ -130,13 +147,15 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       }, 1000);
     } else if (timerSecondsLeft === 0 && timerRunning) {
       setTimerRunning(false);
-      // Switch mode
+      audioSynthService.playChime("bell");
       if (timerMode === "focus") {
         setTimerMode("break");
         setTimerSecondsLeft(5 * 60);
+        showToast("Focus interval complete! Time for a 5-minute break. ☕");
       } else {
         setTimerMode("focus");
         setTimerSecondsLeft(25 * 60);
+        showToast("Break over! Ready for the next focus sprint? ⚡");
       }
     }
     return () => clearInterval(interval);
@@ -149,16 +168,48 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     }
   }, [screenStream, activeRoomTab]);
 
-  // Clean up media tracks on unmount or room leave
+  // Clean up media tracks & audio on unmount or room leave
   useEffect(() => {
     return () => {
       if (screenStream) {
         screenStream.getTracks().forEach((track) => track.stop());
       }
+      audioSynthService.stopAmbient();
     };
   }, [screenStream]);
 
-  // Handle Start / Stop Screen Sharing via WebRTC / Display Media API
+  // Handle Ambient Audio in active room
+  const handleToggleAmbient = (soundType: string) => {
+    if (activeAmbient === soundType) {
+      audioSynthService.stopAmbient();
+      setActiveAmbient("none");
+    } else {
+      audioSynthService.stopAmbient();
+      if (soundType !== "none") {
+        audioSynthService.playAmbient(soundType, ambientVolume);
+      }
+      setActiveAmbient(soundType);
+    }
+  };
+
+  const handleVolumeChange = (vol: number) => {
+    setAmbientVolume(vol);
+    if (activeAmbient !== "none") {
+      audioSynthService.setAmbientVolume(vol);
+    }
+  };
+
+  // Generate random room code
+  const handleGenerateRandomCode = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let result = "";
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setCreateCustomCode(result);
+  };
+
+  // Handle Screen Sharing via Display Media API
   const handleToggleScreenShare = async () => {
     if (isSharingScreen) {
       if (screenStream) {
@@ -187,7 +238,6 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       setIsSimulatedScreen(false);
       setActiveRoomTab("screenshare");
 
-      // Handle native browser "Stop sharing" bar click
       stream.getVideoTracks()[0].onended = () => {
         setScreenStream(null);
         setIsSharingScreen(false);
@@ -230,7 +280,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   const handleJoinByCode = (codeToJoin?: string) => {
     const code = (codeToJoin || joinCodeInput).trim().toUpperCase();
     if (!code) {
-      setJoinCodeError("Please enter a room code (e.g. CS101-SYNC)");
+      setJoinCodeError("Please enter a room code (e.g. FOCUS1 or CS101)");
       return;
     }
 
@@ -242,13 +292,12 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
     setJoinCodeError("");
 
-    // Check if student is already in participants
     const existing = room.currentParticipants.find((p) => p.id === user.id);
     if (!existing) {
       const newParticipant: GroupStudyParticipant = {
-        id: user.id,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
+        id: user.id || `u_${Date.now()}`,
+        name: user.name || "Student",
+        avatarUrl: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Student")}`,
         role: "member",
         status: "studying",
         isMuted: false,
@@ -259,7 +308,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
         id: `sys_${Date.now()}`,
         senderId: "system",
         senderName: "StudyMate Bot",
-        text: `${user.name} joined the study room! 👋`,
+        text: `${user.name || "Student"} joined the study room! 👋`,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         type: "system",
       };
@@ -278,22 +327,29 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     setJoinCodeInput("");
   };
 
-  // Handle Creating a New Group Session
+  // Handle Creating a Custom User Group Room
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (!createTitle.trim()) return;
 
-    const selectedSubject = subjects.find((s) => s.id === createSubjectId);
+    let subjectName = "General Study";
+    if (createSubjectId === "custom" && createCustomSubjectName.trim()) {
+      subjectName = createCustomSubjectName.trim();
+    } else {
+      const selected = subjects.find((s) => s.id === createSubjectId);
+      if (selected) subjectName = selected.name;
+    }
+
     const generatedCode =
       createCustomCode.trim().toUpperCase() ||
-      `${selectedSubject?.name.substring(0, 3).toUpperCase() || "STUDY"}-${Math.floor(
-        1000 + Math.random() * 9000
+      `${subjectName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "") || "STUDY"}-${Math.floor(
+        100 + Math.random() * 900
       )}`;
 
     const hostParticipant: GroupStudyParticipant = {
-      id: user.id,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
+      id: user.id || `u_${Date.now()}`,
+      name: user.name || "Study Host",
+      avatarUrl: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Host")}`,
       role: "host",
       status: "studying",
       isMuted: false,
@@ -304,7 +360,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       id: `sys_${Date.now()}`,
       senderId: "system",
       senderName: "StudyMate Bot",
-      text: `Group Study Room created by ${user.name}. Share code "${generatedCode}" with classmates!`,
+      text: `Live Study Room created by ${user.name || "Host"}. Share code "${generatedCode}" with classmates!`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       type: "system",
     };
@@ -314,21 +370,21 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       code: generatedCode,
       title: createTitle.trim(),
       subjectId: createSubjectId,
-      subjectName: selectedSubject?.name || "General Study",
-      description: createDescription.trim() || "Collaborative student study section.",
-      hostId: user.id,
-      hostName: user.name,
-      hostAvatar: user.avatarUrl,
+      subjectName: subjectName,
+      description: createDescription.trim() || `Collaborative ${createRoomType} study session.`,
+      hostId: user.id || `u_${Date.now()}`,
+      hostName: user.name || "Study Host",
+      hostAvatar: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Host")}`,
       roomType: createRoomType,
-      maxParticipants: Number(createMaxParticipants),
+      maxParticipants: Number(createMaxParticipants) || 8,
       currentParticipants: [hostParticipant],
       isLive: true,
       createdDate: new Date().toISOString(),
-      sharedNotesPad: `# ${createTitle}\n\nWelcome to our group study room! Collaboratively type study notes and key points here.`,
+      sharedNotesPad: `# ${createTitle}\n\n**Topic:** ${subjectName}\n**Host:** ${user.name || "Student"}\n\nCollaboratively type study notes and key takeaways here. All members can edit in real time!`,
       timerState: {
         isRunning: false,
         mode: "focus",
-        secondsLeft: 25 * 60,
+        secondsLeft: createTimerDuration * 60,
       },
       chatMessages: [initialSystemMsg],
     };
@@ -341,9 +397,84 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     setCreateTitle("");
     setCreateDescription("");
     setCreateCustomCode("");
+    setCreateCustomSubjectName("");
 
     // Join the newly created room immediately
     setActiveRoomId(newRoom.id);
+    showToast(`Live room "${newRoom.title}" created successfully!`);
+  };
+
+  // Quick 1-Click Room Preset Creation
+  const handleQuickCreatePreset = (type: GroupRoomType, title: string, duration: number) => {
+    const generatedCode = `FOCUS-${Math.floor(100 + Math.random() * 900)}`;
+    const hostParticipant: GroupStudyParticipant = {
+      id: user.id || `u_${Date.now()}`,
+      name: user.name || "Study Host",
+      avatarUrl: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Host")}`,
+      role: "host",
+      status: "studying",
+      isMuted: false,
+      joinedAt: new Date().toISOString(),
+    };
+
+    const initialSystemMsg: GroupStudyChatMessage = {
+      id: `sys_${Date.now()}`,
+      senderId: "system",
+      senderName: "StudyMate Bot",
+      text: `Live Study Room launched. Share code "${generatedCode}" with study partners!`,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      type: "system",
+    };
+
+    const newRoom: GroupStudySession = {
+      id: `room_${Date.now()}`,
+      code: generatedCode,
+      title: title,
+      subjectId: subjects[0]?.id || "s_general",
+      subjectName: subjects[0]?.name || "General Coursework",
+      description: `Instant ${duration}-minute collaborative ${type} session.`,
+      hostId: user.id || `u_${Date.now()}`,
+      hostName: user.name || "Study Host",
+      hostAvatar: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Host")}`,
+      roomType: type,
+      maxParticipants: 10,
+      currentParticipants: [hostParticipant],
+      isLive: true,
+      createdDate: new Date().toISOString(),
+      sharedNotesPad: `# ${title}\n\nType key study notes, formulas, or questions here!`,
+      timerState: {
+        isRunning: false,
+        mode: "focus",
+        secondsLeft: duration * 60,
+      },
+      chatMessages: [initialSystemMsg],
+    };
+
+    const updatedList = [newRoom, ...groupSessions];
+    onSaveGroupSessions(updatedList);
+    setActiveRoomId(newRoom.id);
+    showToast(`Launched "${newRoom.title}"!`);
+  };
+
+  // Delete / End a Live Room
+  const handleDeleteRoom = (roomId: string, roomTitle: string) => {
+    if (confirm(`Are you sure you want to end and delete the room "${roomTitle}"?`)) {
+      if (activeRoomId === roomId) {
+        setActiveRoomId(null);
+      }
+      const updated = groupSessions.filter((r) => r.id !== roomId);
+      onSaveGroupSessions(updated);
+      showToast(`Room "${roomTitle}" has been closed.`);
+    }
+  };
+
+  // Clear All Live Rooms
+  const handleClearAllRooms = () => {
+    if (confirm("Are you sure you want to remove all live study rooms? You can create new ones anytime.")) {
+      setActiveRoomId(null);
+      onSaveGroupSessions([]);
+      showToast("All live study rooms have been removed.");
+    }
   };
 
   // Leave active room
@@ -358,7 +489,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       id: `sys_leave_${Date.now()}`,
       senderId: "system",
       senderName: "StudyMate Bot",
-      text: `${user.name} left the study room.`,
+      text: `${user.name || "Student"} left the study room.`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       type: "system",
     };
@@ -381,8 +512,8 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
     const newMsg: GroupStudyChatMessage = {
       id: `m_${Date.now()}`,
-      senderId: user.id,
-      senderName: user.name,
+      senderId: user.id || "u_student",
+      senderName: user.name || "Student",
       senderAvatar: user.avatarUrl,
       text: text,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -404,15 +535,15 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     handleSendMessage(`${emoji} ${label}`);
   };
 
-  // Save shared pad to my personal smart notes
+  // Save shared pad to personal smart notes
   const handleSavePadToNotes = () => {
     if (!activeRoom || !sharedNotesPad.trim()) return;
 
     const newNote: Note = {
       id: `note_group_${Date.now()}`,
       userId: user.id,
-      subjectId: activeRoom.subjectId || subjects[0]?.id || "s_cs101",
-      title: `Group Study Notes: ${activeRoom.title}`,
+      subjectId: activeRoom.subjectId || subjects[0]?.id || "s_general",
+      title: `Group Notes: ${activeRoom.title}`,
       content: sharedNotesPad,
       isPinned: true,
       tags: ["Group Study", activeRoom.subjectName, `Room: ${activeRoom.code}`],
@@ -421,13 +552,14 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     };
 
     onSaveNotes([newNote, ...notes]);
-    alert(`Saved group study notes to your personal Smart Notes! 📝`);
+    showToast("Saved group notes to your Smart Notes library! 📝");
   };
 
   // Copy Code to Clipboard
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
     setCopiedCode(true);
+    showToast(`Copied room code "${code}" to clipboard!`);
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
@@ -441,9 +573,9 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   // Filtered rooms list for directory view
   const filteredRooms = groupSessions.filter((room) => {
     const matchesSearch =
-      room.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      room.subjectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      room.code.toLowerCase().includes(searchQuery.toLowerCase());
+      (room.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (room.subjectName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (room.code || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterType === "all" || room.roomType === filterType;
     return matchesSearch && matchesFilter;
   });
@@ -452,15 +584,25 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   // VIEW 1: ACTIVE GROUP ROOM EXPERIENCE (Inside a Joined Room)
   // -------------------------------------------------------------
   if (activeRoom) {
+    const isHost = activeRoom.hostId === user.id || activeRoom.currentParticipants[0]?.id === user.id;
+
     return (
-      <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-in fade-in">
+        {/* Notification Toast */}
+        {toastMessage && (
+          <div className="fixed top-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-xl border border-slate-700 text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
         {/* Room Header */}
         <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 rounded-3xl p-5 sm:p-6 text-white border border-indigo-500/30 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={handleLeaveRoom}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all border border-white/10"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all border border-white/10 cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Exit Room</span>
@@ -472,6 +614,12 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
               <span className="px-2.5 py-1 rounded-lg bg-indigo-500/30 text-indigo-200 text-xs font-semibold">
                 {activeRoom.subjectName}
               </span>
+              {isHost && (
+                <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  Host
+                </span>
+              )}
             </div>
 
             <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
@@ -481,17 +629,17 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
           </div>
 
           {/* Join Code Badge & Controls */}
-          <div className="flex items-center gap-3 shrink-0 flex-wrap">
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-indigo-900/80 border border-indigo-400/40">
               <div className="text-left">
-                <p className="text-[9px] uppercase font-bold text-indigo-300">Room Join Code</p>
+                <p className="text-[9px] uppercase font-bold text-indigo-300">Room Code</p>
                 <p className="text-sm font-mono font-extrabold tracking-wider text-white">
                   {activeRoom.code}
                 </p>
               </div>
               <button
                 onClick={() => handleCopyCode(activeRoom.code)}
-                className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-all ml-1"
+                className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-all ml-1 cursor-pointer"
                 title="Copy Join Code"
               >
                 {copiedCode ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
@@ -500,27 +648,38 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
             <button
               onClick={handleToggleScreenShare}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs transition-all border ${
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all border cursor-pointer ${
                 isSharingScreen
                   ? "bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30 animate-pulse"
                   : "bg-indigo-500/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/30"
               }`}
             >
               {isSharingScreen ? <MonitorOff className="w-4 h-4 text-rose-300" /> : <Monitor className="w-4 h-4 text-indigo-300" />}
-              <span>{isSharingScreen ? "Stop Sharing" : "Share Screen"}</span>
+              <span>{isSharingScreen ? "Stop Share" : "Share Screen"}</span>
             </button>
 
             <button
               onClick={() => setIsMuted(!isMuted)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs transition-all border ${
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all border cursor-pointer ${
                 isMuted
                   ? "bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30"
                   : "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30"
               }`}
             >
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              <span>{isMuted ? "Muted" : "Mic Live"}</span>
+              <span>{isMuted ? "Muted" : "Mic On"}</span>
             </button>
+
+            {isHost && (
+              <button
+                onClick={() => handleDeleteRoom(activeRoom.id, activeRoom.title)}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-rose-600/30 hover:bg-rose-600 border border-rose-500/40 text-rose-200 hover:text-white font-bold text-xs transition-all cursor-pointer"
+                title="End session and delete this room"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>End Room</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -532,7 +691,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex-wrap sm:flex-nowrap">
               <button
                 onClick={() => setActiveRoomTab("timer")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer ${
                   activeRoomTab === "timer"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"
@@ -544,7 +703,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
               <button
                 onClick={() => setActiveRoomTab("notes")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer ${
                   activeRoomTab === "notes"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"
@@ -556,7 +715,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
               <button
                 onClick={() => setActiveRoomTab("screenshare")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all relative ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all relative cursor-pointer ${
                   activeRoomTab === "screenshare"
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
                     : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"
@@ -573,10 +732,10 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             {/* TAB 1: GROUP POMODORO & FOCUS TIMER */}
             {activeRoomTab === "timer" && (
               <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-md text-center space-y-6">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold border border-indigo-200 dark:border-indigo-800">
-                  <Sparkles className="w-4 h-4" />
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold border border-indigo-200 dark:border-indigo-800">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
                   <span>
-                    {timerMode === "focus" ? "25-Minute Synced Focus Session" : "5-Minute Group Break"}
+                    {timerMode === "focus" ? "Synced Focus Sprint" : "Group Rest Interval (5 mins)"}
                   </span>
                 </div>
 
@@ -586,35 +745,102 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                     {formatTimer(timerSecondsLeft)}
                   </span>
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mt-2">
-                    {timerRunning ? "Focusing Together 🧠" : "Timer Paused"}
+                    {timerRunning ? "Studying Together 🧠" : "Timer Paused"}
                   </span>
                 </div>
 
                 {/* Timer Controls */}
-                <div className="flex items-center justify-center gap-4">
+                <div className="flex items-center justify-center gap-3 flex-wrap">
                   <button
                     onClick={() => setTimerRunning(!timerRunning)}
-                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-500/30 transition-all"
+                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-500/30 transition-all cursor-pointer active:scale-95"
                   >
                     {timerRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-current" />}
-                    <span>{timerRunning ? "Pause Timer" : "Start Group Session"}</span>
+                    <span>{timerRunning ? "Pause Timer" : "Start Focus Session"}</span>
                   </button>
+
                   <button
                     onClick={() => {
                       setTimerRunning(false);
                       setTimerSecondsLeft(timerMode === "focus" ? 25 * 60 : 5 * 60);
                     }}
-                    className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold transition-all"
+                    className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold transition-all cursor-pointer"
                     title="Reset Timer"
                   >
                     <RotateCcw className="w-5 h-5" />
                   </button>
+
+                  {/* Mode switcher */}
+                  <button
+                    onClick={() => {
+                      setTimerRunning(false);
+                      if (timerMode === "focus") {
+                        setTimerMode("break");
+                        setTimerSecondsLeft(5 * 60);
+                      } else {
+                        setTimerMode("focus");
+                        setTimerSecondsLeft(25 * 60);
+                      }
+                    }}
+                    className="px-4 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Coffee className="w-4 h-4" />
+                    <span>Switch to {timerMode === "focus" ? "Break" : "Focus"}</span>
+                  </button>
+                </div>
+
+                {/* Ambient Sound Presets */}
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-left space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h4 className="text-xs font-bold uppercase text-slate-400 dark:text-slate-500 tracking-wider flex items-center gap-1.5">
+                      <Headphones className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Background Soundscape</span>
+                    </h4>
+                    {activeAmbient !== "none" && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-[11px] text-slate-400">Volume:</span>
+                        <input
+                          type="range"
+                          min="0.05"
+                          max="0.8"
+                          step="0.05"
+                          value={ambientVolume}
+                          onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                          className="w-20 accent-indigo-600 h-1.5 cursor-pointer"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { id: "rain", label: "🌧️ Rainfall", desc: "Gentle rain" },
+                      { id: "brown", label: "🌊 Brown Noise", desc: "Deep focus" },
+                      { id: "white", label: "📻 White Noise", desc: "Block speech" },
+                      { id: "binaural", label: "🧘 Binaural", desc: "Alpha waves" },
+                    ].map((snd) => (
+                      <button
+                        key={snd.id}
+                        onClick={() => handleToggleAmbient(snd.id)}
+                        className={`p-2.5 rounded-xl text-left transition-all border text-xs cursor-pointer ${
+                          activeAmbient === snd.id
+                            ? "bg-indigo-600 text-white border-indigo-500 shadow-sm"
+                            : "bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        <p className="font-bold">{snd.label}</p>
+                        <p className={`text-[10px] ${activeAmbient === snd.id ? "text-indigo-100" : "text-slate-400"}`}>
+                          {snd.desc}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Live Member Status Grid */}
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-left">
                   <h4 className="text-xs font-bold uppercase text-slate-400 dark:text-slate-500 mb-3 tracking-wider">
-                    Member Live Focus Status
+                    Member Focus Status ({activeRoom.currentParticipants.length})
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {activeRoom.currentParticipants.map((p) => (
@@ -626,7 +852,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                           <img
                             src={
                               p.avatarUrl ||
-                              "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
+                              `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(p.name)}`
                             }
                             alt={p.name}
                             className="w-8 h-8 rounded-full object-cover border border-indigo-400"
@@ -644,7 +870,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                         </div>
 
                         <span className="text-[10px] px-2 py-0.5 rounded-md font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                          {p.isMuted ? "Muted" : "Audio On"}
+                          {p.isMuted ? "Muted" : "Mic Live"}
                         </span>
                       </div>
                     ))}
@@ -656,11 +882,11 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             {/* TAB 2: SHARED COLLABORATIVE STUDY NOTES */}
             {activeRoomTab === "notes" && (
               <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-md space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 flex-wrap gap-2">
                   <div>
                     <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
                       <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      <span>Collaborative Room Note Pad</span>
+                      <span>Collaborative Shared Note Pad</span>
                     </h3>
                     <p className="text-xs text-slate-500">
                       Type real-time shared notes, formulas, and bullet points with all members.
@@ -668,19 +894,24 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                   </div>
                   <button
                     onClick={handleSavePadToNotes}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all cursor-pointer active:scale-95"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Save to My Notes</span>
+                    <span>Save to My Smart Notes</span>
                   </button>
                 </div>
 
                 <textarea
                   value={sharedNotesPad}
                   onChange={(e) => setSharedNotesPad(e.target.value)}
-                  placeholder="Type shared study notes here..."
+                  placeholder="Type shared study notes, key definitions, or quiz questions here..."
                   className="w-full h-80 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed resize-none"
                 />
+
+                <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                  <span>{sharedNotesPad.split(/\s+/).filter(Boolean).length} words • {sharedNotesPad.length} characters</span>
+                  <span>Auto-saved to live session memory</span>
+                </div>
               </div>
             )}
 
@@ -710,7 +941,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                     {isSharingScreen && (
                       <button
                         onClick={() => setIsScreenFullScreen(!isScreenFullScreen)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-all border border-slate-700"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-all border border-slate-700 cursor-pointer"
                       >
                         {isScreenFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                         <span>{isScreenFullScreen ? "Exit Fullscreen" : "Fullscreen"}</span>
@@ -719,7 +950,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
                     <button
                       onClick={handleToggleScreenShare}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
                         isSharingScreen
                           ? "bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/30"
                           : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30"
@@ -737,14 +968,14 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => window.open(window.location.href, "_blank")}
-                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5"
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
                       >
                         <Tv className="w-3.5 h-3.5" />
                         <span>Open App in New Tab</span>
                       </button>
                       <button
                         onClick={handleStartSimulatedPresenter}
-                        className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-all border border-slate-700 flex items-center gap-1.5"
+                        className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-all border border-slate-700 flex items-center gap-1.5 cursor-pointer"
                       >
                         <Monitor className="w-3.5 h-3.5 text-indigo-400" />
                         <span>Launch Study Presenter Mode</span>
@@ -770,7 +1001,6 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                           className="w-full h-full max-h-[500px] object-contain rounded-2xl"
                         />
                       ) : (
-                        /* Interactive Simulated Presenter Canvas for Embedded Frame Preview */
                         <div className="w-full max-w-2xl bg-slate-950 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl my-2">
                           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                             <div className="flex items-center gap-2">
@@ -778,112 +1008,77 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                                 Slide {presenterSlide} / 3
                               </span>
                               <h5 className="font-bold text-sm text-slate-100">
-                                {presenterSlide === 1 && "Computer Science 101: Data Structures"}
-                                {presenterSlide === 2 && "Algorithm Complexity & Big O Analysis"}
-                                {presenterSlide === 3 && "Live Code Workspace & Pseudocode Sandbox"}
+                                {presenterSlide === 1 && `${activeRoom.subjectName}: Core Concepts`}
+                                {presenterSlide === 2 && "Key Formulas & Problem Breakdown"}
+                                {presenterSlide === 3 && "Group Q&A & Discussion Sandbox"}
                               </h5>
                             </div>
                             <div className="flex items-center gap-1.5">
                               <button
                                 onClick={() => setPresenterSlide((s) => Math.max(1, s - 1))}
                                 disabled={presenterSlide === 1}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold disabled:opacity-40"
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold disabled:opacity-40 cursor-pointer"
                               >
                                 Prev
                               </button>
                               <button
                                 onClick={() => setPresenterSlide((s) => Math.min(3, s + 1))}
                                 disabled={presenterSlide === 3}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold disabled:opacity-40"
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold disabled:opacity-40 cursor-pointer"
                               >
                                 Next
                               </button>
                             </div>
                           </div>
 
-                          {presenterSlide === 1 && (
-                            <div className="space-y-3 text-xs text-slate-300 leading-relaxed font-sans">
-                              <div className="p-3 bg-indigo-950/50 border border-indigo-800/40 rounded-xl text-indigo-200">
-                                💡 <strong>Core Concept:</strong> Binary Search Trees require O(log n) time complexity for search, insertion, and deletion when balanced.
-                              </div>
-                              <ul className="list-disc list-inside space-y-1 text-slate-400">
-                                <li>Root node contains key greater than left subtree keys</li>
-                                <li>Right subtree keys are strictly greater than root key</li>
-                                <li>In-order traversal yields sorted sequence in ascending order</li>
-                              </ul>
-                            </div>
-                          )}
-
-                          {presenterSlide === 2 && (
-                            <div className="space-y-3 text-xs text-slate-300">
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-center">
-                                  <p className="text-[10px] text-slate-500 uppercase font-bold">Time Complexity</p>
-                                  <p className="text-base font-extrabold text-emerald-400 mt-1">O(n log n)</p>
-                                  <p className="text-[10px] text-slate-400">MergeSort / QuickSort</p>
+                          <div className="p-6 bg-slate-900 rounded-xl space-y-3 text-left">
+                            {presenterSlide === 1 && (
+                              <>
+                                <h6 className="font-bold text-indigo-400 text-base">{activeRoom.title}</h6>
+                                <p className="text-xs text-slate-300 leading-relaxed">
+                                  {activeRoom.description}
+                                </p>
+                                <div className="p-3 bg-indigo-950/60 rounded-lg border border-indigo-800/50 text-xs text-indigo-200">
+                                  💡 <strong>Host Tip:</strong> Review key notes in the Shared Notes tab while following along here.
                                 </div>
-                                <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-center">
-                                  <p className="text-[10px] text-slate-500 uppercase font-bold">Space Complexity</p>
-                                  <p className="text-base font-extrabold text-indigo-400 mt-1">O(n)</p>
-                                  <p className="text-[10px] text-slate-400">Auxiliary Array Space</p>
+                              </>
+                            )}
+                            {presenterSlide === 2 && (
+                              <>
+                                <h6 className="font-bold text-indigo-400 text-base">Key Problem Solutions</h6>
+                                <div className="space-y-2 text-xs text-slate-300">
+                                  <p>1. Identify the fundamental formula or theorem</p>
+                                  <p>2. Break complex multi-step problems into modular components</p>
+                                  <p>3. Verify edge cases and validate results with classmates</p>
                                 </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {presenterSlide === 3 && (
-                            <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl font-mono text-xs text-indigo-300 space-y-1">
-                              <p className="text-slate-500">// Live Pseudocode Demonstration</p>
-                              <p><span className="text-rose-400">function</span> <span className="text-yellow-300">binarySearch</span>(arr, target) &#123;</p>
-                              <p className="pl-4"><span className="text-rose-400">let</span> left = 0, right = arr.length - 1;</p>
-                              <p className="pl-4"><span className="text-rose-400">while</span> (left &lt;= right) &#123; ... &#125;</p>
-                              <p>&#123;</p>
-                            </div>
-                          )}
-
-                          <div className="text-[10px] text-slate-500 text-center pt-2">
-                            ✨ Study Presenter Broadcasting active to all room members
+                              </>
+                            )}
+                            {presenterSlide === 3 && (
+                              <>
+                                <h6 className="font-bold text-indigo-400 text-base">Interactive Group Brainstorm</h6>
+                                <p className="text-xs text-slate-300 leading-relaxed">
+                                  Use the live chat on the right to post questions or request step-by-step walkthroughs from study partners.
+                                </p>
+                              </>
+                            )}
                           </div>
                         </div>
                       )}
-
-                      <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 text-xs font-bold text-white">
-                        <img
-                          src={user.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"}
-                          alt={user.name}
-                          className="w-5 h-5 rounded-full object-cover border border-indigo-400"
-                        />
-                        <span>{user.name} ({screenStream ? "Presenting Live Screen" : "Presenting Study Canvas"})</span>
-                      </div>
                     </div>
                   ) : (
-                    <div className="text-center p-8 space-y-4 max-w-md mx-auto">
-                      <div className="w-16 h-16 rounded-3xl bg-indigo-950/80 border border-indigo-500/30 flex items-center justify-center mx-auto text-indigo-400 shadow-inner">
-                        <Monitor className="w-8 h-8" />
-                      </div>
-                      <div className="space-y-1">
-                        <h4 className="text-base font-bold text-white">No Screen Currently Being Shared</h4>
-                        <p className="text-xs text-slate-400 leading-relaxed">
-                          Click <strong className="text-indigo-300">"Start Sharing Screen"</strong> to present slides, code editor, or documents to all room members in real-time.
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-center gap-2 flex-wrap">
-                        <button
-                          onClick={handleToggleScreenShare}
-                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all"
-                        >
-                          <Monitor className="w-4 h-4" />
-                          <span>Share Screen</span>
-                        </button>
-                        <button
-                          onClick={handleStartSimulatedPresenter}
-                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-all border border-slate-700"
-                        >
-                          <Tv className="w-4 h-4 text-indigo-400" />
-                          <span>Study Presenter Canvas</span>
-                        </button>
-                      </div>
+                    <div className="text-center p-8 space-y-3">
+                      <Tv className="w-12 h-12 text-slate-700 mx-auto" />
+                      <h4 className="font-bold text-base text-slate-300">Screen Sharing Inactive</h4>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                        Click "Start Sharing Screen" above to broadcast your notes, textbook, or code window to all participants.
+                      </p>
+                      <button
+                        onClick={handleToggleScreenShare}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition-all inline-flex items-center gap-2 cursor-pointer"
+                      >
+                        <Monitor className="w-4 h-4" />
+                        <span>Start Screen Share</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -891,116 +1086,117 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             )}
           </div>
 
-          {/* Right Column: Active Room Chat & Participant Roster (4 Cols) */}
+          {/* Right Sidebar: Live Chat & Participants (4 Cols) */}
           <div className="lg:col-span-4 space-y-6">
-            {/* Live Room Chat Panel */}
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-md flex flex-col h-[560px]">
-              {/* Chat Header */}
-              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 rounded-t-3xl">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100">
-                    Live Room Chat
-                  </h4>
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-md flex flex-col h-[600px] justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                      Live Room Chat
+                    </h4>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
+                    {activeRoom.currentParticipants.length} online
+                  </span>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                  {activeRoom.currentParticipants.length} Online
-                </span>
-              </div>
 
-              {/* Chat Messages Scroll Container */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-                {activeRoom.chatMessages.map((msg) => {
-                  if (msg.type === "system" || msg.type === "timer_alert") {
+                {/* Quick Reaction Emotes */}
+                <div className="flex items-center gap-1.5 pb-2 mb-2 border-b border-slate-100 dark:border-slate-800 overflow-x-auto">
+                  <button
+                    onClick={() => handleSendEmote("💡", "Idea / Question")}
+                    className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-xs font-bold transition-all cursor-pointer shrink-0"
+                    title="Post Idea"
+                  >
+                    💡 Idea
+                  </button>
+                  <button
+                    onClick={() => handleSendEmote("👏", "Great job!")}
+                    className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-xs font-bold transition-all cursor-pointer shrink-0"
+                    title="Clap"
+                  >
+                    👏 Bravo
+                  </button>
+                  <button
+                    onClick={() => handleSendEmote("🔥", "On fire!")}
+                    className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-xs font-bold transition-all cursor-pointer shrink-0"
+                    title="On Fire"
+                  >
+                    🔥 Fire
+                  </button>
+                  <button
+                    onClick={() => handleSendEmote("❓", "Need clarification")}
+                    className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-xs font-bold transition-all cursor-pointer shrink-0"
+                    title="Help"
+                  >
+                    ❓ Help
+                  </button>
+                </div>
+
+                {/* Messages Container */}
+                <div className="h-[380px] overflow-y-auto space-y-3 pr-1 text-xs">
+                  {activeRoom.chatMessages.map((msg) => {
+                    const isMe = msg.senderId === user.id;
+                    const isSystem = msg.type === "system";
+
+                    if (isSystem) {
+                      return (
+                        <div
+                          key={msg.id}
+                          className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800/50 text-center text-slate-500 dark:text-slate-400 text-[11px] italic"
+                        >
+                          {msg.text}
+                        </div>
+                      );
+                    }
+
                     return (
                       <div
                         key={msg.id}
-                        className="text-center my-2 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50 dark:bg-indigo-950/60 py-1.5 px-3 rounded-full border border-indigo-200/50 dark:border-indigo-800/50"
+                        className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
                       >
-                        ⚡ {msg.text}
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="font-bold text-[11px] text-slate-700 dark:text-slate-300">
+                            {isMe ? "You" : msg.senderName}
+                          </span>
+                          <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
+                        </div>
+                        <div
+                          className={`p-3 rounded-2xl max-w-[85%] leading-relaxed ${
+                            isMe
+                              ? "bg-indigo-600 text-white rounded-tr-none shadow-sm font-medium"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-none"
+                          }`}
+                        >
+                          {msg.text}
+                        </div>
                       </div>
                     );
-                  }
-
-                  const isMe = msg.senderId === user.id;
-
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
-                    >
-                      <span className="text-[9px] text-slate-400 mb-0.5 font-medium px-1">
-                        {msg.senderName} • {msg.timestamp}
-                      </span>
-                      <div
-                        className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${
-                          isMe
-                            ? "bg-indigo-600 text-white rounded-tr-none shadow-sm"
-                            : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-none border border-slate-200/60 dark:border-slate-700"
-                        }`}
-                      >
-                        {msg.text}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={chatEndRef} />
+                  })}
+                  <div ref={chatEndRef} />
+                </div>
               </div>
 
-              {/* Quick Reactions Bar */}
-              <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1">
-                <button
-                  onClick={() => handleSendEmote("🔥", "Great focus!")}
-                  className="px-2 py-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-xs transition-all"
-                  title="Flame reaction"
-                >
-                  🔥
-                </button>
-                <button
-                  onClick={() => handleSendEmote("👏", "Awesome job!")}
-                  className="px-2 py-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-xs transition-all"
-                >
-                  👏
-                </button>
-                <button
-                  onClick={() => handleSendEmote("💡", "Got a key insight!")}
-                  className="px-2 py-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-xs transition-all"
-                >
-                  💡
-                </button>
-                <button
-                  onClick={() => handleSendEmote("❓", "Quick question!")}
-                  className="px-2 py-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-xs transition-all"
-                >
-                  ❓
-                </button>
-                <button
-                  onClick={() => handleSendEmote("⏱️", "Pomodoro break!")}
-                  className="px-2 py-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-xs transition-all"
-                >
-                  ⏱️
-                </button>
-              </div>
-
-              {/* Input Form */}
+              {/* Message Input Bar */}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                   handleSendMessage();
                 }}
-                className="p-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2"
+                className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2"
               >
                 <input
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Type message..."
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Type message to room..."
+                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <button
                   type="submit"
                   disabled={!chatInput.trim()}
-                  className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-all"
+                  className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-all cursor-pointer shrink-0"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -1016,7 +1212,15 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   // VIEW 2: GROUP STUDY DIRECTORY & ROOM CREATOR / JOINER HUB
   // -------------------------------------------------------------
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-in fade-in">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-xl border border-slate-700 text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top">
+          <Sparkles className="w-4 h-4 text-amber-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Hero Banner */}
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white border border-indigo-500/30 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="space-y-2">
@@ -1030,7 +1234,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             <span>Group Study & Collaborative Rooms</span>
           </h2>
           <p className="text-xs sm:text-sm text-indigo-200/90 max-w-xl leading-relaxed">
-            Create or join virtual study rooms with your classmates. Sync focus timers, collaborate on live study notes, and share quizzes in real time!
+            Set up your own custom live study rooms, sync Pomodoro focus timers, share screens, and collaborate with classmates in real time!
           </p>
         </div>
 
@@ -1038,10 +1242,78 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition-all"
+            className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition-all cursor-pointer active:scale-95"
           >
             <Plus className="w-4 h-4" />
-            <span>Create Study Room</span>
+            <span>+ Set Up Your Live Room</span>
+          </button>
+
+          {groupSessions.length > 0 && (
+            <button
+              onClick={handleClearAllRooms}
+              className="flex items-center gap-1.5 px-3.5 py-3 rounded-2xl bg-white/10 hover:bg-rose-500/30 text-white font-bold text-xs transition-all border border-white/15 cursor-pointer"
+              title="Remove all live rooms"
+            >
+              <Trash2 className="w-4 h-4 text-rose-300" />
+              <span>Clear All Rooms</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* QUICK LAUNCH 1-CLICK PRESET TEMPLATES */}
+      <div className="bg-slate-50 dark:bg-slate-800/40 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-800 space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <span>Quick 1-Click Room Setup</span>
+          </h4>
+          <span className="text-[11px] text-slate-400">Launch an instant room with pre-configured focus parameters</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <button
+            onClick={() => handleQuickCreatePreset("pomodoro", "⚡ 25-Min Pomodoro Sprint", 25)}
+            className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 shadow-xs text-left transition-all hover:shadow-md cursor-pointer group"
+          >
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-2 group-hover:scale-110 transition-transform">
+              <Timer className="w-4 h-4" />
+            </div>
+            <h5 className="font-bold text-xs text-slate-900 dark:text-slate-100">Pomodoro Sprint</h5>
+            <p className="text-[11px] text-slate-500 mt-0.5">25m synced interval + 5m rest</p>
+          </button>
+
+          <button
+            onClick={() => handleQuickCreatePreset("discussion", "💬 Group Discussion & Q&A", 45)}
+            className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 shadow-xs text-left transition-all hover:shadow-md cursor-pointer group"
+          >
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-2 group-hover:scale-110 transition-transform">
+              <MessageSquare className="w-4 h-4" />
+            </div>
+            <h5 className="font-bold text-xs text-slate-900 dark:text-slate-100">Discussion & Q&A</h5>
+            <p className="text-[11px] text-slate-500 mt-0.5">Active collaboration & mic on</p>
+          </button>
+
+          <button
+            onClick={() => handleQuickCreatePreset("quiz_challenge", "🎯 Quiz & Flashcard Arena", 30)}
+            className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 shadow-xs text-left transition-all hover:shadow-md cursor-pointer group"
+          >
+            <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950 flex items-center justify-center text-amber-600 dark:text-amber-400 mb-2 group-hover:scale-110 transition-transform">
+              <Zap className="w-4 h-4" />
+            </div>
+            <h5 className="font-bold text-xs text-slate-900 dark:text-slate-100">Quiz & Flashcard Arena</h5>
+            <p className="text-[11px] text-slate-500 mt-0.5">Rapid question drills & testing</p>
+          </button>
+
+          <button
+            onClick={() => handleQuickCreatePreset("silent_focus", "🤫 Silent Study Hall", 60)}
+            className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 shadow-xs text-left transition-all hover:shadow-md cursor-pointer group"
+          >
+            <div className="w-8 h-8 rounded-xl bg-violet-50 dark:bg-violet-950 flex items-center justify-center text-violet-600 dark:text-violet-400 mb-2 group-hover:scale-110 transition-transform">
+              <Headphones className="w-4 h-4" />
+            </div>
+            <h5 className="font-bold text-xs text-slate-900 dark:text-slate-100">Silent Study Hall</h5>
+            <p className="text-[11px] text-slate-500 mt-0.5">60m distraction-free library</p>
           </button>
         </div>
       </div>
@@ -1058,7 +1330,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                 Have a Room Code?
               </h4>
               <p className="text-xs text-slate-500">
-                Enter your classmate’s 6-character study code to join immediately
+                Enter your classmate’s 6-character room code to join immediately
               </p>
             </div>
           </div>
@@ -1071,19 +1343,22 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                 setJoinCodeInput(e.target.value);
                 setJoinCodeError("");
               }}
-              placeholder="e.g. CS101-SYNC or SQL-8920"
+              placeholder="e.g. FOCUS-123 or BIO-890"
               className="flex-1 px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-xs sm:text-sm font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-200 dark:border-slate-700"
             />
             <button
               onClick={() => handleJoinByCode()}
-              className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-500/20 transition-all shrink-0"
+              className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-500/20 transition-all shrink-0 cursor-pointer active:scale-95"
             >
               Join Session
             </button>
           </div>
         </div>
         {joinCodeError && (
-          <p className="text-xs text-rose-500 font-semibold mt-2 pl-2">{joinCodeError}</p>
+          <p className="text-xs text-rose-500 font-semibold mt-2 pl-2 flex items-center gap-1">
+            <AlertCircle className="w-3.5 h-3.5" />
+            <span>{joinCodeError}</span>
+          </p>
         )}
       </div>
 
@@ -1096,7 +1371,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search active study rooms by subject, topic, or host..."
+            placeholder="Search live rooms by title, course topic, or host..."
             className="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
           />
         </div>
@@ -1113,7 +1388,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             <button
               key={type.id}
               onClick={() => setFilterType(type.id)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 filterType === type.id
                   ? "bg-indigo-600 text-white shadow-xs"
                   : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800"
@@ -1128,31 +1403,36 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       {/* ROOMS DIRECTORY GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredRooms.length === 0 ? (
-          <div className="col-span-full text-center py-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8">
-            <Users className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
+          <div className="col-span-full text-center py-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-3">
+            <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-950/60 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mx-auto">
+              <Users className="w-7 h-7" />
+            </div>
             <h4 className="font-bold text-base text-slate-900 dark:text-slate-100">
-              No Group Study Rooms Found
+              No Live Study Rooms Active
             </h4>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-              Be the first student to create a live study room and invite classmates!
+            <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+              You haven't set up any live study rooms yet. Set up your custom study room above or use one of the quick 1-click presets!
             </p>
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="mt-4 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all inline-flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create New Room</span>
-            </button>
+            <div className="pt-2">
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all inline-flex items-center gap-2 cursor-pointer active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Set Up Your Live Room</span>
+              </button>
+            </div>
           </div>
         ) : (
           filteredRooms.map((room) => {
             const isFull = room.currentParticipants.length >= room.maxParticipants;
             const isMember = room.currentParticipants.some((p) => p.id === user.id);
+            const isHost = room.hostId === user.id || room.currentParticipants[0]?.id === user.id;
 
             return (
               <div
                 key={room.id}
-                className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-md hover:shadow-lg transition-all flex flex-col justify-between space-y-4"
+                className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-md hover:shadow-lg transition-all flex flex-col justify-between space-y-4 group"
               >
                 <div>
                   {/* Top Tags */}
@@ -1161,10 +1441,22 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                       {room.subjectName}
                     </span>
 
-                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      LIVE NOW
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        LIVE NOW
+                      </span>
+
+                      {isHost && (
+                        <button
+                          onClick={() => handleDeleteRoom(room.id, room.title)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
+                          title="Delete room"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Title */}
@@ -1181,13 +1473,18 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                       <img
                         src={
                           room.hostAvatar ||
-                          "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80"
+                          `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(room.hostName)}`
                         }
                         alt={room.hostName}
                         className="w-7 h-7 rounded-full object-cover border border-indigo-500"
                       />
-                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Host: {room.hostName}
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                        <span>{room.hostName}</span>
+                        {isHost && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-bold">
+                            You
+                          </span>
+                        )}
                       </span>
                     </div>
 
@@ -1209,7 +1506,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                   <button
                     onClick={() => handleJoinByCode(room.code)}
                     disabled={isFull && !isMember}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
                       isMember
                         ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
                         : isFull
@@ -1226,20 +1523,25 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
         )}
       </div>
 
-      {/* CREATE GROUP ROOM MODAL */}
+      {/* CREATE / SET UP LIVE ROOM MODAL */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 my-8">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 my-8 animate-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                  Create Group Study Room
-                </h3>
+                <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
+                    Set Up Your Live Study Room
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Configure parameters, duration, and invite classmates</p>
+                </div>
               </div>
               <button
                 onClick={() => setIsCreateModalOpen(false)}
-                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1256,17 +1558,17 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                   required
                   value={createTitle}
                   onChange={(e) => setCreateTitle(e.target.value)}
-                  placeholder="e.g. Computer Networks TCP Handshake Session"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g. Calculus Midterm Problem Set Sprint"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
                 />
               </div>
 
-              {/* Subject Select */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Course Subject
-                  </label>
+              {/* Subject Select or Custom Subject */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase text-slate-500">
+                  Course Subject
+                </label>
+                <div className="grid grid-cols-2 gap-3">
                   <select
                     value={createSubjectId}
                     onChange={(e) => setCreateSubjectId(e.target.value)}
@@ -1277,9 +1579,33 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                         {s.name}
                       </option>
                     ))}
+                    <option value="custom">+ Custom Subject Name</option>
                   </select>
-                </div>
 
+                  {createSubjectId === "custom" ? (
+                    <input
+                      type="text"
+                      value={createCustomSubjectName}
+                      onChange={(e) => setCreateCustomSubjectName(e.target.value)}
+                      placeholder="e.g. Molecular Biology"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  ) : (
+                    <select
+                      value={createRoomType}
+                      onChange={(e) => setCreateRoomType(e.target.value as GroupRoomType)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="pomodoro">Pomodoro Focus Room</option>
+                      <option value="discussion">Discussion & Q&A</option>
+                      <option value="quiz_challenge">Quiz & Flashcard Arena</option>
+                      <option value="silent_focus">Silent Background Study</option>
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {createSubjectId === "custom" && (
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
                     Room Type
@@ -1295,66 +1621,94 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                     <option value="silent_focus">Silent Background Study</option>
                   </select>
                 </div>
-              </div>
+              )}
 
-              {/* Max Capacity & Custom Code */}
+              {/* Focus Duration & Max Capacity */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Max Participants
+                    Focus Interval (Minutes)
+                  </label>
+                  <select
+                    value={createTimerDuration}
+                    onChange={(e) => setCreateTimerDuration(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value={15}>15 Minutes</option>
+                    <option value={25}>25 Minutes (Standard)</option>
+                    <option value={45}>45 Minutes</option>
+                    <option value={50}>50 Minutes (Deep Focus)</option>
+                    <option value={60}>60 Minutes</option>
+                    <option value={90}>90 Minutes (Ultradian Cycle)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
+                    Max Capacity (Students)
                   </label>
                   <input
                     type="number"
                     min="2"
-                    max="25"
+                    max="50"
                     value={createMaxParticipants}
                     onChange={(e) => setCreateMaxParticipants(Number(e.target.value))}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Custom Room Code (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={createCustomCode}
-                    onChange={(e) => setCreateCustomCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. CS101-ROOM"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
               </div>
 
-              {/* Description */}
+              {/* Custom Room Code */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold uppercase text-slate-500">
+                    Room Join Code
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateRandomCode}
+                    className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
+                  >
+                    🎲 Generate Random PIN
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={createCustomCode}
+                  onChange={(e) => setCreateCustomCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. FOCUS-77 or BIO-EXAM"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Study Goals / Description */}
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                  Study Goals & Description
+                  Session Goal & Agenda (Optional)
                 </label>
                 <textarea
                   rows={3}
                   value={createDescription}
                   onChange={(e) => setCreateDescription(e.target.value)}
-                  placeholder="What topics will you be covering in this session?"
+                  placeholder="What topics or practice problems will you focus on during this session?"
                   className="w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                 />
               </div>
 
-              {/* Submit */}
+              {/* Submit / Cancel Actions */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all"
+                  className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all cursor-pointer active:scale-95"
                 >
-                  Launch Study Room
+                  Launch Live Room
                 </button>
               </div>
             </form>

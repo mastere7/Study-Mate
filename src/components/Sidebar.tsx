@@ -19,6 +19,9 @@ import {
   X,
   Menu,
   GraduationCap,
+  Plus,
+  Settings,
+  BookOpen,
 } from "lucide-react";
 import { Subject } from "../types";
 import { getTranslation } from "../services/i18n";
@@ -30,6 +33,7 @@ interface SidebarProps {
   subjects?: Subject[];
   activeSubjectFilter?: string | null;
   onSelectSubjectFilter?: (subjectId: string | null) => void;
+  onOpenSubjectModal?: () => void;
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
   isCollapsed?: boolean;
@@ -60,11 +64,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   subjects = [],
   activeSubjectFilter,
   onSelectSubjectFilter,
+  onOpenSubjectModal,
   isOpenMobile = false,
   onCloseMobile = () => {},
   isCollapsed = false,
   currentLanguage = "en",
 }) => {
+  const activeSubjectObj = subjects.find((s) => s.id === activeSubjectFilter);
+  const currentDisplayCourse = activeSubjectObj?.name || subjects[0]?.name || "General Focus";
   return (
     <>
       {/* Mobile Backdrop */}
@@ -168,41 +175,88 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
 
           {/* Subjects Filter List (If expanded) */}
-          {(!isCollapsed || isOpenMobile) && subjects.length > 0 && (
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-              <div className="flex items-center justify-between px-3">
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                  Course Subjects
-                </p>
-                {activeSubjectFilter && (
-                  <button
-                    onClick={() => onSelectSubjectFilter && onSelectSubjectFilter(null)}
-                    className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold"
-                  >
-                    Clear
-                  </button>
-                )}
+          {(!isCollapsed || isOpenMobile) && (
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between px-2">
+                <div className="flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    My Courses {subjects.length > 0 ? `(${subjects.length})` : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {activeSubjectFilter && (
+                    <button
+                      onClick={() => onSelectSubjectFilter && onSelectSubjectFilter(null)}
+                      className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold px-1"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  {onOpenSubjectModal && (
+                    <button
+                      onClick={onOpenSubjectModal}
+                      className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                      title="Manage Course Subjects"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
-              {subjects.map((sub) => {
-                const isSelected = activeSubjectFilter === sub.id;
-                return (
-                  <button
-                    key={sub.id}
-                    onClick={() => onSelectSubjectFilter && onSelectSubjectFilter(isSelected ? null : sub.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
-                      isSelected
-                        ? "bg-slate-100 dark:bg-slate-800 font-bold text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700"
-                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${sub.color || "bg-indigo-500"}`} />
-                      <span className="truncate">{sub.name}</span>
-                    </div>
-                    <ChevronRight className="w-3 h-3 text-slate-400" />
-                  </button>
-                );
-              })}
+
+              {subjects.length === 0 ? (
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-1.5 mx-1">
+                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">No courses added yet</p>
+                  {onOpenSubjectModal && (
+                    <button
+                      onClick={onOpenSubjectModal}
+                      className="w-full py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-xs flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>+ Set Up Your Courses</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5 custom-scrollbar">
+                  {subjects.map((sub) => {
+                    const isSelected = activeSubjectFilter === sub.id;
+                    return (
+                      <button
+                        key={sub.id}
+                        onClick={() => onSelectSubjectFilter && onSelectSubjectFilter(isSelected ? null : sub.id)}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-indigo-50 dark:bg-indigo-950/70 font-bold text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] shrink-0 ${sub.color || "bg-indigo-600 text-white"}`}>
+                            {sub.icon || "📚"}
+                          </span>
+                          <div className="text-left truncate">
+                            <p className="truncate font-bold leading-tight">{sub.name}</p>
+                            {sub.code && <p className="text-[9px] font-mono text-slate-400">{sub.code}</p>}
+                          </div>
+                        </div>
+                        <ChevronRight className={`w-3 h-3 shrink-0 ${isSelected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
+                      </button>
+                    );
+                  })}
+
+                  {onOpenSubjectModal && (
+                    <button
+                      onClick={onOpenSubjectModal}
+                      className="w-full py-1.5 text-center text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center justify-center gap-1 cursor-pointer pt-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>+ Add Course</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -210,14 +264,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Bento Dark Box - Current Active Session Widget */}
         {!isCollapsed || isOpenMobile ? (
           <div className="bg-slate-900 rounded-2xl p-4 text-white shadow-md w-full">
-            <p className="text-[10px] text-slate-400 mb-1 font-bold uppercase tracking-wider">Current Session</p>
-            <p className="text-xs font-bold truncate text-slate-100">Computer Science 101</p>
+            <p className="text-[10px] text-slate-400 mb-1 font-bold uppercase tracking-wider">Active Course</p>
+            <p className="text-xs font-bold truncate text-slate-100">{currentDisplayCourse}</p>
             <div className="mt-3 h-1.5 bg-slate-800 rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500 w-2/3 rounded-full"></div>
             </div>
           </div>
         ) : (
-          <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-md" title="CS101 Session">
+          <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-md" title={currentDisplayCourse}>
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
           </div>
         )}

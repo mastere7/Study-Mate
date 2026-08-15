@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { Assignment, StudySchedule, Subject, TaskStatus, PriorityLevel } from "../../types";
+import { storageService } from "../../services/storage";
 
 interface StudyPlannerScreenProps {
   assignments: Assignment[];
@@ -52,8 +53,16 @@ export const StudyPlannerScreen: React.FC<StudyPlannerScreenProps> = ({
 
   // Move assignment between Kanban columns
   const handleUpdateAssStatus = (id: string, newStatus: TaskStatus) => {
+    const ass = assignments.find((a) => a.id === id);
     const updated = assignments.map((a) => (a.id === id ? { ...a, status: newStatus } : a));
     onSaveAssignments(updated);
+    if (newStatus === "Completed" && ass) {
+      storageService.addActivity({
+        type: "deadline_completed",
+        title: `Completed: ${ass.title}`,
+        description: `Finished assignment successfully! 🎉`,
+      });
+    }
   };
 
   const handleDeleteAssignment = (id: string) => {
@@ -66,9 +75,9 @@ export const StudyPlannerScreen: React.FC<StudyPlannerScreenProps> = ({
     if (!newAssTitle.trim()) return;
 
     const newAss: Assignment = {
-      id: `a_${Date.now()}`,
+      id: `a_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       userId: "u_student_1",
-      subjectId: newAssSubjectId,
+      subjectId: newAssSubjectId || "general",
       title: newAssTitle.trim(),
       description: newAssDesc.trim(),
       dueDate: newAssDueDate,
@@ -77,6 +86,13 @@ export const StudyPlannerScreen: React.FC<StudyPlannerScreenProps> = ({
     };
 
     onSaveAssignments([newAss, ...assignments]);
+    const sub = subjects.find((s) => s.id === newAssSubjectId);
+    storageService.addActivity({
+      type: "deadline_created",
+      title: `Set deadline: ${newAss.title}`,
+      description: `Due on ${newAss.dueDate} (${newAss.priority} Priority)`,
+      subjectName: sub?.name || "General Coursework",
+    });
     setShowAddAssModal(false);
     setNewAssTitle("");
     setNewAssDesc("");
@@ -87,9 +103,9 @@ export const StudyPlannerScreen: React.FC<StudyPlannerScreenProps> = ({
     if (!newSchTitle.trim()) return;
 
     const newSch: StudySchedule = {
-      id: `sch_${Date.now()}`,
+      id: `sch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       userId: "u_student_1",
-      subjectId: newSchSubjectId,
+      subjectId: newSchSubjectId || "general",
       title: newSchTitle.trim(),
       date: newSchDate,
       startTime: newSchStart,
@@ -378,6 +394,7 @@ export const StudyPlannerScreen: React.FC<StudyPlannerScreenProps> = ({
                   onChange={(e) => setNewAssSubjectId(e.target.value)}
                   className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 outline-none font-semibold"
                 >
+                  <option value="general">General Coursework</option>
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}

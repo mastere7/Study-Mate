@@ -21,6 +21,7 @@ import {
 import { Note, Subject } from "../../types";
 import { apiService } from "../../services/api";
 import { exportService } from "../../services/exportService";
+import { storageService } from "../../services/storage";
 
 interface NotesScreenProps {
   notes: Note[];
@@ -95,7 +96,7 @@ export const NotesScreen: React.FC<NotesScreenProps> = ({
       const newNote: Note = {
         id: `note_doc_${Date.now()}`,
         userId: "u_student_1",
-        subjectId: subjects[0]?.id || "sub_bio",
+        subjectId: subjects[0]?.id || "",
         title: `Summary: ${cleanTitle}`,
         content: `Document Name: ${file.name}\n\nExecutive Summary:\n${res.summary}`,
         summary: res.summary,
@@ -106,6 +107,11 @@ export const NotesScreen: React.FC<NotesScreenProps> = ({
       };
 
       onSaveNotes([newNote, ...notes]);
+      storageService.addActivity({
+        type: "note_created",
+        title: `Uploaded Note: ${newNote.title}`,
+        description: `Imported document "${file.name}" with AI summary`,
+      });
       alert(`Successfully analyzed and created a summarized note for "${file.name}"!`);
     } catch (err: any) {
       console.error(err);
@@ -169,8 +175,18 @@ export const NotesScreen: React.FC<NotesScreenProps> = ({
     if (existingIdx >= 0) {
       updated = [...notes];
       updated[existingIdx] = finalNote;
+      storageService.addActivity({
+        type: "note_updated",
+        title: `Updated Note: ${finalNote.title}`,
+        description: "Modified study note content",
+      });
     } else {
       updated = [finalNote, ...notes];
+      storageService.addActivity({
+        type: "note_created",
+        title: `Created Note: ${finalNote.title}`,
+        description: "Added new study note",
+      });
     }
 
     onSaveNotes(updated);

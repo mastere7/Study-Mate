@@ -190,7 +190,7 @@ export const CurriculumMapScreen: React.FC<CurriculumMapScreenProps> = ({
   const [newNodeTitle, setNewNodeTitle] = useState<string>("");
   const [newNodeDesc, setNewNodeDesc] = useState<string>("");
   const [newNodeSubject, setNewNodeSubject] = useState<string>(
-    subjects[0]?.id || "s_cs101"
+    subjects[0]?.id || "general"
   );
   const [newNodeStatus, setNewNodeStatus] = useState<TopicNodeStatus>("not_started");
   const [newNodeHours, setNewNodeHours] = useState<number>(3);
@@ -208,7 +208,7 @@ export const CurriculumMapScreen: React.FC<CurriculumMapScreenProps> = ({
 
   // AI Generator Prompt
   const [aiPrompt, setAiPrompt] = useState<string>("");
-  const [aiSubjectId, setAiSubjectId] = useState<string>(subjects[0]?.id || "s_cs101");
+  const [aiSubjectId, setAiSubjectId] = useState<string>(subjects[0]?.id || "general");
   const [isAiGenerating, setIsAiGenerating] = useState<boolean>(false);
 
   // Canvas Reference

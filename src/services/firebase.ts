@@ -21,6 +21,8 @@ import {
   getDocs,
   deleteDoc,
   writeBatch,
+  onSnapshot,
+  query,
 } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 import {
@@ -121,8 +123,9 @@ export const loginWithGoogle = async () => {
   const cred = await signInWithPopup(auth, googleProvider);
   const userDocRef = doc(db, "users", cred.user.uid);
   const userSnap = await getDoc(userDocRef);
+  const isNewAccount = !userSnap.exists();
 
-  if (!userSnap.exists()) {
+  if (isNewAccount) {
     const newUserProfile: User = {
       id: cred.user.uid,
       name: cred.user.displayName || "Student",
@@ -142,7 +145,7 @@ export const loginWithGoogle = async () => {
     await seedInitialUserData(cred.user.uid);
   }
 
-  return cred.user;
+  return { user: cred.user, isNewAccount };
 };
 
 export const logoutUser = async () => {

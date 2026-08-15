@@ -13,8 +13,11 @@ import {
   Loader2,
   CheckCircle2,
   Send,
+  Camera,
 } from "lucide-react";
 import { UserProfile } from "../../types";
+import { storageService } from "../../services/storage";
+import { AvatarSelector } from "./AvatarSelector";
 import {
   auth,
   registerWithEmail,
@@ -51,7 +54,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [registerName, setRegisterName] = useState("");
   const [name, setName] = useState(currentUser.name || "");
+  const [avatarUrl, setAvatarUrl] = useState(currentUser.avatarUrl || "");
   const [gradeLevel, setGradeLevel] = useState(currentUser.gradeLevel || "");
   const [major, setMajor] = useState(currentUser.major || "");
   const [studyGoal, setStudyGoal] = useState(currentUser.studyGoal || "");
@@ -66,6 +71,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setName(currentUser.name || "");
+      setAvatarUrl(currentUser.avatarUrl || "");
       setGradeLevel(currentUser.gradeLevel || "");
       setMajor(currentUser.major || "");
       setStudyGoal(currentUser.studyGoal || "");
@@ -89,6 +95,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const parseFirebaseError = (err: any): string => {
     const code = err?.code || "";
+    if (code === "auth/operation-not-allowed") {
+      return "Email/Password sign-in is currently disabled in your Firebase project. Please enable Email/Password provider in the Firebase Console (Authentication > Sign-in method) or sign in with Google.";
+    }
     if (code === "auth/email-already-in-use") return "This email is already registered. Please Sign In.";
     if (code === "auth/invalid-email") return "Please enter a valid email address.";
     if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential") {
@@ -100,6 +109,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     return err?.message || "An unexpected authentication error occurred. Please try again.";
   };
 
+  const handleSelectAvatar = (newAvatarUrl: string) => {
+    setAvatarUrl(newAvatarUrl);
+    const updated: UserProfile = {
+      ...currentUser,
+      avatarUrl: newAvatarUrl,
+    };
+    onUpdateUser(updated);
+    storageService.saveUser(updated);
+    if (auth.currentUser) {
+      syncUserDoc(auth.currentUser.uid, updated);
+    }
+    setSuccessMessage("Avatar updated!");
+    setTimeout(() => setSuccessMessage(null), 2500);
+  };
+
   // 1. Profile Update
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,6 +133,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const updated: UserProfile = {
         ...currentUser,
         name: name.trim() || currentUser.name,
+        avatarUrl: avatarUrl || currentUser.avatarUrl,
         gradeLevel: gradeLevel.trim() || currentUser.gradeLevel,
         major: major.trim() || currentUser.major,
         studyGoal: studyGoal.trim() || currentUser.studyGoal,
@@ -140,8 +165,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setIsLoading(true);
     try {
-      await loginWithEmail(email.trim(), password);
-      setSuccessMessage("Logged in successfully!");
+      const userCred = await loginWithEmail(email.trim(), password);
+      const firstName = storageService.extractFirstName(userCred.displayName, email.trim()) || "Student";
+      storageService.setUserFirstName(firstName);
+      storageService.setAuthStatus("returning_user");
+      setSuccessMessage(`Welcome back, ${firstName}! You are now signed in.`);
       setTimeout(() => {
         onClose();
       }, 700);
@@ -173,17 +201,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     try {
       const targetEmail = email.trim();
-      const defaultDisplayName = targetEmail.split("@")[0] || "Student";
+      const chosenName = registerName.trim() || targetEmail.split("@")[0] || "Student";
       const newProfile = await registerWithEmail(
         targetEmail,
         password,
-        defaultDisplayName,
+        chosenName,
         "Undergraduate Student",
         "General Studies"
       );
+      const firstName = storageService.extractFirstName(chosenName, targetEmail) || "Student";
+      storageService.setUserFirstName(firstName);
+      storageService.setAuthStatus("new_account");
       onUpdateUser(newProfile);
       setRegisteredEmailSent(targetEmail);
-      setSuccessMessage(`Account created! A verification email has been sent to ${targetEmail}.`);
+      setSuccessMessage(`Welcome, ${firstName}! A verification link has been sent to ${targetEmail}.`);
     } catch (err: any) {
       setErrorMessage(parseFirebaseError(err));
     } finally {
@@ -210,8 +241,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     clearMessages();
     setIsLoading(true);
     try {
-      await loginWithGoogle();
-      setSuccessMessage("Signed in with Google successfully!");
+      const result = await loginWithGoogle();
+      const googleUser = result.user;
+      const firstName = storageService.extractFirstName(googleUser.displayName, googleUser.email) || "Student";
+      storageService.setUserFirstName(firstName);
+      
+      if (result.isNewAccount) {
+        storageService.setAuthStatus("new_account");
+        setSuccessMessage(`Welcome, ${firstName}! Signed in with Google.`);
+      } else {
+        storageService.setAuthStatus("returning_user");
+        setSuccessMessage(`Welcome back, ${firstName}! Signed in with Google.`);
+      }
+
       setTimeout(() => {
         onClose();
       }, 700);
@@ -267,7 +309,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-5 relative overflow-hidden">
+      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-2xl space-y-4 relative max-h-[90vh] overflow-y-auto custom-scrollbar">
         {/* Top Decorative Glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full" />
 
@@ -280,7 +322,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div>
               <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
                 {activeTab === "profile"
-                  ? "Student Profile"
+                  ? "Student Profile & Avatar"
                   : activeTab === "register"
                   ? "Create Account"
                   : activeTab === "forgot"
@@ -288,7 +330,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : "Sign In"}
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                {isUserLoggedIn ? "Synced with Cloud Database" : "Save your study notes & progress"}
+                {isUserLoggedIn ? "Synced with Cloud Database" : "Customize your avatar & save study records"}
               </p>
             </div>
           </div>
@@ -302,21 +344,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Auth Sub-tabs */}
         <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl">
-          {isUserLoggedIn && (
-            <button
-              onClick={() => {
-                setActiveTab("profile");
-                clearMessages();
-              }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeTab === "profile"
-                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
-            >
-              Profile
-            </button>
-          )}
+          <button
+            onClick={() => {
+              setActiveTab("profile");
+              clearMessages();
+            }}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === "profile"
+                ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            Profile & Avatar
+          </button>
           <button
             onClick={() => {
               setActiveTab("login");
@@ -359,11 +399,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {/* VIEW 1: Active Student Profile (Visible when viewing profile settings) */}
+        {/* VIEW 1: Active Student Profile & Avatar Customizer */}
         {activeTab === "profile" && (
           <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
+            {/* Avatar & Photo Customizer Section */}
+            <div className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800">
+              <AvatarSelector
+                currentAvatarUrl={avatarUrl || currentUser.avatarUrl}
+                userName={name || currentUser.name}
+                userEmail={currentUser.email}
+                onSelectAvatar={handleSelectAvatar}
+              />
+            </div>
+
             {/* Gamification Stats Bar */}
-            <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/40">
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/40">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
                   <Flame className="w-5 h-5 text-amber-500" />
@@ -394,6 +444,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder="Your full name"
                 className="mt-1 w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -679,6 +730,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
 
                 <form onSubmit={handleRegister} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <UserIcon className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Full Name / First Name</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={registerName}
+                      onChange={(e) => setRegisterName(e.target.value)}
+                      placeholder="e.g. Jordan Smith"
+                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
                   <div>
                     <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                       <Mail className="w-3.5 h-3.5 text-slate-400" />

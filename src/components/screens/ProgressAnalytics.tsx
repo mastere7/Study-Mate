@@ -34,38 +34,58 @@ export const ProgressAnalytics: React.FC<ProgressAnalyticsProps> = ({
   subjects,
 }) => {
   // Chart Data: Quiz score performance over time
-  const quizTrendData = quizzes
-    .filter((q) => q.score !== undefined)
+  const scoredQuizzes = quizzes.filter((q) => q.score !== undefined);
+  const quizTrendData = scoredQuizzes
     .slice(-7)
-    .map((q, idx) => ({
+    .map((q) => ({
       name: q.title.length > 12 ? q.title.slice(0, 10) + "..." : q.title,
       score: q.score || 0,
     }));
 
-  // Chart Data: Weekly study hours
-  const studyHoursData = [
-    { day: "Mon", hours: 2.5 },
-    { day: "Tue", hours: 4.0 },
-    { day: "Wed", hours: 3.2 },
-    { day: "Thu", hours: 5.1 },
-    { day: "Fri", hours: 1.8 },
-    { day: "Sat", hours: 4.5 },
-    { day: "Sun", hours: 3.0 },
-  ];
+  // Calculate real focus hours from Pomodoro sessions
+  const totalFocusMinutes = sessions
+    .filter((s) => s.type === "focus")
+    .reduce((acc, s) => acc + (s.durationMinutes || 0), 0);
+  const totalFocusHours = (totalFocusMinutes / 60).toFixed(1);
+
+  // Compute real study hours per day for the last 7 days
+  const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const last7Days: { day: string; dateStr: string; hours: number }[] = [];
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    const dayName = daysOfWeek[d.getDay()];
+    
+    // Sum pomodoro sessions for this date
+    const daySessionsMins = sessions
+      .filter((s) => s.type === "focus" && s.timestamp && s.timestamp.startsWith(dateStr))
+      .reduce((acc, s) => acc + (s.durationMinutes || 0), 0);
+
+    last7Days.push({
+      day: dayName,
+      dateStr,
+      hours: parseFloat((daySessionsMins / 60).toFixed(1)),
+    });
+  }
+  const studyHoursData = last7Days;
 
   const totalAssCount = assignments.length;
   const completedAssCount = assignments.filter((a) => a.status === "Completed").length;
   const assCompletionPercent = totalAssCount > 0 ? Math.round((completedAssCount / totalAssCount) * 100) : 0;
 
   const avgQuizScore =
-    quizzes.filter((q) => q.score !== undefined).length > 0
+    scoredQuizzes.length > 0
       ? Math.round(
-          quizzes
-            .filter((q) => q.score !== undefined)
-            .reduce((acc, q) => acc + (q.score || 0), 0) /
-            quizzes.filter((q) => q.score !== undefined).length
+          scoredQuizzes.reduce((acc, q) => acc + (q.score || 0), 0) / scoredQuizzes.length
         )
-      : 85;
+      : 0;
+
+  // Determine smart AI recommendation
+  const lowestScoringQuiz = scoredQuizzes.length > 0
+    ? [...scoredQuizzes].sort((a, b) => (a.score || 0) - (b.score || 0))[0]
+    : null;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
@@ -90,9 +110,11 @@ export const ProgressAnalytics: React.FC<ProgressAnalyticsProps> = ({
             <Award className="w-5 h-5" />
           </div>
           <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-            {avgQuizScore}%
+            {scoredQuizzes.length > 0 ? `${avgQuizScore}%` : "—"}
           </p>
-          <p className="text-[11px] text-emerald-500 font-semibold">+4.2% from last week</p>
+          <p className="text-[11px] text-slate-400">
+            {scoredQuizzes.length > 0 ? `${scoredQuizzes.length} quiz${scoredQuizzes.length === 1 ? "" : "zes"} completed` : "No quizzes taken yet"}
+          </p>
         </div>
 
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
@@ -103,9 +125,11 @@ export const ProgressAnalytics: React.FC<ProgressAnalyticsProps> = ({
             <CheckCircle className="w-5 h-5" />
           </div>
           <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-            {completedAssCount}/{totalAssCount} ({assCompletionPercent}%)
+            {completedAssCount}/{totalAssCount} {totalAssCount > 0 ? `(${assCompletionPercent}%)` : ""}
           </p>
-          <p className="text-[11px] text-slate-400">Assignments done on time</p>
+          <p className="text-[11px] text-slate-400">
+            {totalAssCount > 0 ? "Assignments completed" : "No assignments added"}
+          </p>
         </div>
 
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
@@ -116,7 +140,7 @@ export const ProgressAnalytics: React.FC<ProgressAnalyticsProps> = ({
             <Clock className="w-5 h-5" />
           </div>
           <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-            24.1 hrs
+            {totalFocusHours} hrs
           </p>
           <p className="text-[11px] text-slate-400">Logged via Pomodoro timer</p>
         </div>
@@ -129,9 +153,9 @@ export const ProgressAnalytics: React.FC<ProgressAnalyticsProps> = ({
             <BookOpen className="w-5 h-5" />
           </div>
           <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
-            {subjects.length} Subjects
+            {subjects.length} {subjects.length === 1 ? "Subject" : "Subjects"}
           </p>
-          <p className="text-[11px] text-slate-400">Active coursework tracked</p>
+          <p className="text-[11px] text-slate-400">Coursework enrolled</p>
         </div>
       </div>
 
@@ -144,21 +168,29 @@ export const ProgressAnalytics: React.FC<ProgressAnalyticsProps> = ({
             <span>Quiz Performance Trend</span>
           </h3>
 
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={quizTrendData.length > 0 ? quizTrendData : [{ name: "Q1", score: 85 }]}>
-                <defs>
-                  <linearGradient id="scoreColor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} />
-                <YAxis domain={[0, 100]} stroke="#94a3b8" fontSize={11} />
-                <Tooltip />
-                <Area type="monotone" dataKey="score" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#scoreColor)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="h-64 flex items-center justify-center">
+            {quizTrendData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={quizTrendData}>
+                  <defs>
+                    <linearGradient id="scoreColor" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} />
+                  <YAxis domain={[0, 100]} stroke="#94a3b8" fontSize={11} />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="score" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#scoreColor)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center p-6 space-y-2">
+                <Award className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No quiz scores recorded yet</p>
+                <p className="text-[11px] text-slate-400">Generate or take an AI Quiz to track your mastery scores over time.</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -188,10 +220,21 @@ export const ProgressAnalytics: React.FC<ProgressAnalyticsProps> = ({
           <Sparkles className="w-4 h-4" />
           <span>StudyMate AI Learning Insights</span>
         </div>
-        <h4 className="font-extrabold text-lg">Recommended Focus Area: Computer Networks</h4>
-        <p className="text-xs text-indigo-200 max-w-2xl leading-relaxed">
-          Based on your latest quiz performance in TCP/IP subnets, generating 5 flashcards on CIDR notation and reviewing chapter 4 notes will improve your overall mastery score by ~15%.
-        </p>
+        {lowestScoringQuiz ? (
+          <>
+            <h4 className="font-extrabold text-lg">Recommended Review: {lowestScoringQuiz.title}</h4>
+            <p className="text-xs text-indigo-200 max-w-2xl leading-relaxed">
+              Based on your latest score ({lowestScoringQuiz.score}%), generating flashcards or summarizing related course materials will help boost your comprehension and retention.
+            </p>
+          </>
+        ) : (
+          <>
+            <h4 className="font-extrabold text-lg">Personalized AI Study Insights</h4>
+            <p className="text-xs text-indigo-200 max-w-2xl leading-relaxed">
+              As you create notes, set deadline reminders, and complete Pomodoro focus sessions, StudyMate AI will analyze your learning velocity to provide targeted study recommendations.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

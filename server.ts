@@ -87,7 +87,7 @@ Your goal is to break down complex topics into clear, intuitive concepts. Always
     contents.push({ role: "user", parts: [{ text: prompt }] });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents: contents,
       config: {
         systemInstruction,
@@ -174,7 +174,7 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
 
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.7-flash",
         contents: { parts },
         config: {
           systemInstruction: "You are an expert document research assistant and academic summarizer.",
@@ -230,7 +230,7 @@ Include question types: ${questionTypes ? questionTypes.join(", ") : "Multiple C
 Ensure every question includes 4 choices (for multiple choice), the correct answer string, and a helpful step-by-step explanation for why the answer is correct.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents: prompt,
       config: {
         systemInstruction: "You are a professional educational assessment creator.",
@@ -273,28 +273,77 @@ Ensure every question includes 4 choices (for multiple choice), the correct answ
   }
 });
 
-// 4. AI Flashcard Generator API
-app.post("/api/ai/generate-flashcards", async (req, res) => {
+// 4. AI Flashcard Generator API (Supports direct Course file uploads + text)
+app.post("/api/ai/generate-flashcards", upload.single("file"), async (req, res) => {
   try {
-    const { topic, sourceText, count = 10, subject } = req.body;
+    const file = req.file;
+    const topic = req.body.topic || "";
+    const sourceText = req.body.sourceText || "";
+    const count = parseInt(req.body.count || "10", 10);
+    const subject = req.body.subject || "";
+    const difficulty = req.body.difficulty || "High-Yield";
 
     const ai = getGeminiAI();
 
-    const prompt = `Create ${count} high-yield flashcards for studying ${subject ? `Subject: ${subject}` : ""} Topic: "${topic || "Study Topic"}".
-${sourceText ? `Use this text material:\n${sourceText.substring(0, 3000)}\n` : ""}
+    let parts: any[] = [];
 
-Make questions precise and clear on the front, and thorough, easy-to-remember answers on the back. Add 1-2 keywords/tags for each card.`;
+    // Handle course file upload if present
+    if (file) {
+      const fnLower = (file.originalname || "").toLowerCase();
+      const mimeType = file.mimetype || "";
+
+      if (fnLower.endsWith(".docx") || mimeType.includes("wordprocessingml")) {
+        try {
+          const result = await mammoth.extractRawText({ buffer: file.buffer });
+          parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${result.value || ""}` });
+        } catch (docxErr) {
+          const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ");
+          parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${rawText}` });
+        }
+      } else if (fnLower.endsWith(".txt") || mimeType.startsWith("text/")) {
+        parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${file.buffer.toString("utf-8")}` });
+      } else {
+        const base64Data = file.buffer.toString("base64");
+        const safeMime = mimeType || (fnLower.endsWith(".pdf") ? "application/pdf" : "application/pdf");
+        parts.push({
+          inlineData: {
+            data: base64Data,
+            mimeType: safeMime,
+          },
+        });
+      }
+    }
+
+    if (sourceText) {
+      parts.push({ text: `Course Study Material Text:\n${sourceText.substring(0, 8000)}` });
+    }
+
+    const promptInstructions = `You are a world-class cognitive learning specialist and flashcard creator.
+Create a comprehensive deck of exactly ${count} high-yield active recall flashcards from the provided course material/topic.
+
+Course / Subject: ${subject || "General Course"}
+Topic / Module Focus: ${topic || "Course Core Concepts"}
+Target Focus Level: ${difficulty}
+
+Rules for high-yield flashcards:
+1. FRONT: Clear, specific, thought-provoking question, formula prompt, or concept identifier.
+2. BACK: Concise, high-impact answer, bulleted breakdown, or direct formula and application.
+3. Add 1-3 relevant tags for each card (e.g., topic keywords).
+4. Provide an overall descriptive deckTitle and short summary description of the deck.`;
+
+    parts.push({ text: promptInstructions });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: prompt,
+      model: "gemini-3.7-flash",
+      contents: { parts },
       config: {
-        systemInstruction: "You are a flashcard memory expert specializing in active recall and spaced repetition.",
+        systemInstruction: "You are a flashcard memory expert specializing in active recall and spaced repetition Leitner methods.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             deckTitle: { type: Type.STRING },
+            description: { type: Type.STRING },
             cards: {
               type: Type.ARRAY,
               items: {
@@ -359,7 +408,7 @@ Provide a structured response:
     };
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents: { parts: [imagePart, textPart] },
       config: {
         systemInstruction: "You are a master academic OCR scanner and step-by-step math & science tutor.",
@@ -387,7 +436,7 @@ app.post("/api/ai/voice-explain", async (req, res) => {
     const ai = getGeminiAI();
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents: `Provide a concise, conversational 3 to 4 sentence explanation suitable for reading aloud to a student asking: "${question}". Topic context: ${topic || "general knowledge"}.`,
       config: {
         systemInstruction: "You are an enthusiastic, clear radio podcast host / voice tutor for students.",

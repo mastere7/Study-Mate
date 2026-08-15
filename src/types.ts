@@ -28,7 +28,9 @@ export interface Subject {
   name: string;
   color: string; // Tailwind color or hex
   icon?: string;
+  code?: string; // e.g. "CS101", "BIO200"
   description?: string;
+  instructor?: string;
 }
 
 export interface Note {
@@ -218,6 +220,16 @@ export interface TopicEdge {
 
 export type GroupRoomType = "pomodoro" | "discussion" | "quiz_challenge" | "silent_focus";
 
+export interface GroupJoinRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  userEmail?: string;
+  requestedAt: string;
+  status: "pending" | "approved" | "rejected";
+}
+
 export interface GroupStudySession {
   id: string;
   code: string; // e.g., "STUDY-892A"
@@ -233,6 +245,8 @@ export interface GroupStudySession {
   currentParticipants: GroupStudyParticipant[];
   isLive: boolean;
   createdDate: string;
+  requireApproval?: boolean; // If true, creator must approve join requests unless valid room code is entered
+  pendingRequests?: GroupJoinRequest[]; // Join requests awaiting host review
   scheduledTime?: string;
   sharedNotesPad?: string;
   sharedDeckId?: string;
@@ -274,5 +288,24 @@ export interface RoadmapBadge {
   iconName: string;
   unlockedAt?: string;
   subjectId?: string;
+}
+
+export interface ActivityItem {
+  id: string;
+  type:
+    | "deadline_created"
+    | "deadline_completed"
+    | "deadline_updated"
+    | "note_created"
+    | "note_updated"
+    | "pomodoro_completed"
+    | "quiz_completed"
+    | "deck_created"
+    | "goal_updated"
+    | "subject_created";
+  title: string;
+  description?: string;
+  timestamp: string;
+  subjectName?: string;
 }
 

@@ -157,6 +157,30 @@ class AudioSynthService {
     this.activeSoundType = null;
   }
 
+  playAmbient(soundType: string, volume: number = 0.2) {
+    const mapped = (soundType === "rain" || soundType === "whitenoise" || soundType === "lofi" || soundType === "waves"
+      ? soundType
+      : soundType === "white"
+      ? "whitenoise"
+      : soundType === "brown"
+      ? "rain"
+      : "lofi") as "rain" | "whitenoise" | "lofi" | "waves";
+    this.startAmbientSound(mapped);
+    this.setAmbientVolume(volume);
+  }
+
+  stopAmbient() {
+    this.stopAmbientSound();
+  }
+
+  setAmbientVolume(volume: number) {
+    if (this.ambientGain && this.ctx) {
+      try {
+        this.ambientGain.gain.setValueAtTime(Math.max(0.01, Math.min(1.0, volume)), this.ctx.currentTime);
+      } catch (e) {}
+    }
+  }
+
   getActiveSound(): string | null {
     return this.activeSoundType;
   }
@@ -188,3 +212,4 @@ class AudioSynthService {
 }
 
 export const audioSynth = new AudioSynthService();
+export const audioSynthService = audioSynth;
