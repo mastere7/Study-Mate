@@ -98,31 +98,37 @@ export const QuestionScanner: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer">
-              <Upload className="w-4 h-4" />
-              <span>{selectedImage ? "Change Image" : "Upload Snapshot"}</span>
-              <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <label className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 font-bold text-xs cursor-pointer border border-indigo-200 dark:border-indigo-800 transition-all">
+              <Camera className="w-4 h-4" />
+              <span>Take Photo</span>
+              <input type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
             </label>
 
-            <button
-              onClick={handleScanAndSolve}
-              disabled={!selectedImage || isScanning}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-purple-500/20 transition-all"
-            >
-              {isScanning ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Scanning OCR...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>Scan & Solve</span>
-                </>
-              )}
-            </button>
+            <label className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer border border-slate-200 dark:border-slate-700 transition-all">
+              <Upload className="w-4 h-4" />
+              <span>{selectedImage ? "Choose File" : "Upload File"}</span>
+              <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+            </label>
           </div>
+
+          <button
+            onClick={handleScanAndSolve}
+            disabled={!selectedImage || isScanning}
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-purple-500/20 transition-all cursor-pointer"
+          >
+            {isScanning ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Analyzing & Solving OCR...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                <span>Scan & Solve Problem</span>
+              </>
+            )}
+          </button>
         </div>
 
         {/* Right Box: AI Solution Breakdown */}

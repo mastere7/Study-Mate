@@ -18,14 +18,17 @@ import {
   User,
   Info,
   CheckCircle2,
+  Calendar,
+  ListTodo,
 } from "lucide-react";
-import { Subject } from "../types";
+import { Subject, Assignment } from "../types";
 import { storageService } from "../services/storage";
 
 interface CourseSubjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   subjects: Subject[];
+  assignments?: Assignment[];
   onSaveSubjects: (subjects: Subject[]) => void;
   activeSubjectFilter?: string | null;
   onSelectSubjectFilter?: (subjectId: string | null) => void;
@@ -132,6 +135,7 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
   isOpen,
   onClose,
   subjects,
+  assignments,
   onSaveSubjects,
   activeSubjectFilter,
   onSelectSubjectFilter,
@@ -441,14 +445,39 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {subjects.map((subj) => {
                       const isFiltered = activeSubjectFilter === subj.id;
+                      const activeAssignments = assignments || storageService.getAssignments();
+                      const subjAssignments = activeAssignments.filter((a) => a.subjectId === subj.id);
+                      const totalTasks = subjAssignments.length;
+                      const completedTasks = subjAssignments.filter((a) => a.status === "Completed").length;
+                      const pendingTasks = totalTasks - completedTasks;
+                      const percent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+                      const getStrokeColor = (colorStr?: string) => {
+                        if (!colorStr) return "#6366f1";
+                        if (colorStr.includes("emerald")) return "#10b981";
+                        if (colorStr.includes("violet")) return "#8b5cf6";
+                        if (colorStr.includes("purple")) return "#a855f7";
+                        if (colorStr.includes("rose")) return "#f43f5e";
+                        if (colorStr.includes("amber")) return "#f59e0b";
+                        if (colorStr.includes("teal")) return "#14b8a6";
+                        if (colorStr.includes("cyan")) return "#06b6d4";
+                        if (colorStr.includes("blue")) return "#3b82f6";
+                        if (colorStr.includes("orange")) return "#f97316";
+                        if (colorStr.includes("fuchsia")) return "#d946ef";
+                        if (colorStr.includes("slate")) return "#64748b";
+                        return "#6366f1";
+                      };
+
+                      const ringColor = percent === 100 ? "#10b981" : getStrokeColor(subj.color);
+
                       return (
                         <div
                           key={subj.id}
                           className="group relative p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 hover:bg-slate-100/90 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 transition-all flex flex-col justify-between"
                         >
-                          <div className="space-y-2">
+                          <div className="space-y-3">
                             <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shadow-xs shrink-0 ${subj.color || "bg-indigo-600 text-white"}`}>
                                   {subj.icon || "📚"}
                                 </div>
@@ -466,21 +495,64 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button
-                                  onClick={() => handleStartEdit(subj)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition-all cursor-pointer"
-                                  title="Edit course"
+                              {/* Visual Progress Ring */}
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <div
+                                  className="relative w-9 h-9 shrink-0 flex items-center justify-center"
+                                  title={`${percent}% tasks completed (${completedTasks}/${totalTasks})`}
                                 >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteSubject(subj.id, subj.name)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
-                                  title="Delete course"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                  <svg className="w-9 h-9 transform -rotate-90" viewBox="0 0 36 36">
+                                    <circle
+                                      cx="18"
+                                      cy="18"
+                                      r="14"
+                                      stroke="currentColor"
+                                      strokeWidth="3.2"
+                                      className="text-slate-200 dark:text-slate-700/80"
+                                      fill="transparent"
+                                    />
+                                    <circle
+                                      cx="18"
+                                      cy="18"
+                                      r="14"
+                                      stroke={ringColor}
+                                      strokeWidth="3.2"
+                                      strokeDasharray={87.96}
+                                      strokeDashoffset={totalTasks > 0 ? 87.96 - (percent / 100) * 87.96 : 87.96}
+                                      strokeLinecap="round"
+                                      fill="transparent"
+                                      className="transition-all duration-500 ease-out"
+                                    />
+                                  </svg>
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <span className={`text-[9px] font-black leading-none ${
+                                      percent === 100
+                                        ? "text-emerald-600 dark:text-emerald-400"
+                                        : totalTasks === 0
+                                        ? "text-slate-400"
+                                        : "text-slate-700 dark:text-slate-200"
+                                    }`}>
+                                      {totalTasks === 0 ? "0%" : `${percent}%`}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center">
+                                  <button
+                                    onClick={() => handleStartEdit(subj)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition-all cursor-pointer"
+                                    title="Edit course"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSubject(subj.id, subj.name)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
+                                    title="Delete course"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
 
@@ -496,10 +568,61 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
                                 <span className="truncate">{subj.instructor}</span>
                               </div>
                             )}
+
+                            {/* Visual Progress Bar Section */}
+                            <div className="pt-2 border-t border-slate-200/50 dark:border-slate-700/50 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                                  <CheckCircle2 className={`w-3.5 h-3.5 ${
+                                    percent === 100
+                                      ? "text-emerald-500"
+                                      : totalTasks === 0
+                                      ? "text-slate-400"
+                                      : "text-indigo-500"
+                                  }`} />
+                                  <span>Task Progress</span>
+                                </span>
+                                <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                                  {completedTasks} of {totalTasks} <span className="text-slate-400 text-[10px]">({percent}%)</span>
+                                </span>
+                              </div>
+
+                              <div className="w-full h-2 rounded-full bg-slate-200/80 dark:bg-slate-700 overflow-hidden relative">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    percent === 100
+                                      ? "bg-emerald-500"
+                                      : percent > 0
+                                      ? "bg-indigo-600 dark:bg-indigo-500"
+                                      : "bg-slate-300 dark:bg-slate-600"
+                                  }`}
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-slate-400 font-medium">
+                                  {totalTasks === 0
+                                    ? "No tasks assigned"
+                                    : pendingTasks === 0
+                                    ? "All tasks completed! 🎉"
+                                    : `${pendingTasks} remaining`}
+                                </span>
+                                <span className={`font-black text-[9px] px-1.5 py-0.2 rounded-md ${
+                                  percent === 100
+                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                                    : percent > 0
+                                    ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+                                    : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                                }`}>
+                                  {percent === 100 ? "100% DONE" : totalTasks === 0 ? "NO TASKS" : `${percent}% DONE`}
+                                </span>
+                              </div>
+                            </div>
                           </div>
 
                           {/* Quick Filter toggle */}
-                          <div className="pt-3 mt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-xs">
+                          <div className="pt-2.5 mt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-xs">
                             <span className="text-[10px] text-slate-400">Filter status:</span>
                             {onSelectSubjectFilter && (
                               <button

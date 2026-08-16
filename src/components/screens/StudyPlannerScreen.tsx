@@ -177,7 +177,7 @@ export const StudyPlannerScreen: React.FC<StudyPlannerScreenProps> = ({
             className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-500/20 transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>{activeTab === "kanban" ? "+ Assignment" : "+ Session"}</span>
+            <span>{activeTab === "kanban" ? "Add Assignment" : "Add Session"}</span>
           </button>
         </div>
       </div>

@@ -117,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <nav className="space-y-1 w-full">
             {(!isCollapsed || isOpenMobile) && (
               <p className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                Navigation
+                {getTranslation(currentLanguage || "en", "navigation", "Navigation")}
               </p>
             )}
             {NAV_ITEMS.map((item) => {
@@ -181,7 +181,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    My Courses {subjects.length > 0 ? `(${subjects.length})` : ""}
+                    {getTranslation(currentLanguage || "en", "myCourses", "My Courses")} {subjects.length > 0 ? `(${subjects.length})` : ""}
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
@@ -190,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       onClick={() => onSelectSubjectFilter && onSelectSubjectFilter(null)}
                       className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold px-1"
                     >
-                      Clear
+                      {getTranslation(currentLanguage || "en", "clear", "Clear")}
                     </button>
                   )}
                   {onOpenSubjectModal && (
@@ -207,14 +207,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {subjects.length === 0 ? (
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-1.5 mx-1">
-                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">No courses added yet</p>
+                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                    {getTranslation(currentLanguage || "en", "noCoursesAddedYet", "No courses added yet")}
+                  </p>
                   {onOpenSubjectModal && (
                     <button
                       onClick={onOpenSubjectModal}
                       className="w-full py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-xs flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
                     >
                       <Plus className="w-3 h-3" />
-                      <span>+ Set Up Your Courses</span>
+                      <span>{getTranslation(currentLanguage || "en", "setUpCourses", "Set Up Your Courses")}</span>
                     </button>
                   )}
                 </div>
@@ -252,7 +254,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       className="w-full py-1.5 text-center text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center justify-center gap-1 cursor-pointer pt-1"
                     >
                       <Plus className="w-3 h-3" />
-                      <span>+ Add Course</span>
+                      <span>{getTranslation(currentLanguage || "en", "addCourse", "Add Course")}</span>
                     </button>
                   )}
                 </div>
@@ -264,7 +266,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Bento Dark Box - Current Active Session Widget */}
         {!isCollapsed || isOpenMobile ? (
           <div className="bg-slate-900 rounded-2xl p-4 text-white shadow-md w-full">
-            <p className="text-[10px] text-slate-400 mb-1 font-bold uppercase tracking-wider">Active Course</p>
+            <p className="text-[10px] text-slate-400 mb-1 font-bold uppercase tracking-wider">
+              {getTranslation(currentLanguage || "en", "activeCourse", "Active Course")}
+            </p>
             <p className="text-xs font-bold truncate text-slate-100">{currentDisplayCourse}</p>
             <div className="mt-3 h-1.5 bg-slate-800 rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500 w-2/3 rounded-full"></div>

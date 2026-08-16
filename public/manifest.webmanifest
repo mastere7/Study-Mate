@@ -1,0 +1,19 @@
+{
+  "name": "StudyMate - Smart AI Study & Revision Companion",
+  "short_name": "StudyMate",
+  "description": "Comprehensive AI study companion for students to learn difficult concepts, manage notes, analyze documents, solve questions via OCR, create flashcards, auto-generate quizzes, organize study plans, track Pomodoro focus, and monitor progress.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080c14",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "productivity", "utilities"]
+}

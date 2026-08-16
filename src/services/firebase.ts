@@ -317,3 +317,100 @@ export const syncFullCollection = async (userId: string, collectionName: string,
     console.error(`Error batch syncing ${collectionName} to Firestore:`, err);
   }
 };
+
+// ==========================================
+// Group Study Sessions Firestore Sync & Live Listeners
+// ==========================================
+
+export enum OperationType {
+  CREATE = "create",
+  UPDATE = "update",
+  DELETE = "delete",
+  LIST = "list",
+  GET = "get",
+  WRITE = "write",
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error("Firestore Error: ", JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+export const subscribeToGroupSessions = (onUpdate: (sessions: GroupStudySession[]) => void) => {
+  const path = "groupSessions";
+  try {
+    const sessionsCol = collection(db, path);
+    return onSnapshot(
+      sessionsCol,
+      (snapshot) => {
+        const sessions: GroupStudySession[] = [];
+        snapshot.forEach((docSnap) => {
+          if (docSnap.exists()) {
+            sessions.push({ ...docSnap.data(), id: docSnap.id } as GroupStudySession);
+          }
+        });
+        onUpdate(sessions);
+      },
+      (error) => {
+        console.warn("Could not listen to real-time groupSessions:", error);
+      }
+    );
+  } catch (err) {
+    console.warn("Could not attach groupSessions listener:", err);
+    return () => {};
+  }
+};
+
+export const saveGroupSessionToFirestore = async (session: GroupStudySession) => {
+  if (!session || !session.id) return;
+  const path = `groupSessions/${session.id}`;
+  try {
+    await setDoc(doc(db, "groupSessions", session.id), session, { merge: true });
+  } catch (err) {
+    console.warn(`Could not save groupSession to Firestore:`, err);
+  }
+};
+
+export const deleteGroupSessionFromFirestore = async (sessionId: string) => {
+  if (!sessionId) return;
+  try {
+    await deleteDoc(doc(db, "groupSessions", sessionId));
+  } catch (err) {
+    console.warn(`Could not delete groupSession ${sessionId} from Firestore:`, err);
+  }
+};
+

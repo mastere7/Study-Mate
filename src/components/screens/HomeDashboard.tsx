@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import { UserProfile, Subject, Note, Assignment, StudySchedule, Quiz, ActivityItem, PriorityLevel, TaskStatus, GroupStudySession } from "../../types";
 import { storageService } from "../../services/storage";
-import { User as UserIcon } from "lucide-react";
+import { User as UserIcon, GraduationCap } from "lucide-react";
 
 export interface StudyTip {
   id: string;
@@ -132,25 +132,27 @@ export const STUDY_TIPS: StudyTip[] = [
   },
 ];
 
-const WIDGET_ORDER_STORAGE_KEY = "studymate_dashboard_widget_order_v1";
+const WIDGET_ORDER_STORAGE_KEY = "studymate_dashboard_widget_order_v2";
 
 export type WidgetId =
   | "ai_tutor"
   | "quick_tip"
   | "learning_progress"
+  | "enrolled_courses"
+  | "deadlines"
+  | "recent_updates"
   | "pomodoro"
   | "streak"
   | "doc_uploader"
   | "flashcards"
   | "group_study"
-  | "deadlines"
-  | "recent_updates"
   | "recent_note";
 
 const DEFAULT_WIDGET_ORDER: WidgetId[] = [
   "ai_tutor",
   "quick_tip",
   "learning_progress",
+  "enrolled_courses",
   "deadlines",
   "recent_updates",
   "pomodoro",
@@ -165,6 +167,7 @@ const WIDGET_TITLES: Record<WidgetId, string> = {
   ai_tutor: "AI Tutor Assistant",
   quick_tip: "Quick Tip of the Day (Study Techniques)",
   learning_progress: "Daily Study Goal & Progress Ring",
+  enrolled_courses: "Course Subjects & Task Progress",
   deadlines: "Upcoming Deadlines",
   recent_updates: "Recent Activity & Updates",
   pomodoro: "Focus Mode (Pomodoro)",
@@ -1105,7 +1108,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               className="bg-violet-600 hover:bg-violet-500 text-white font-bold shadow-md shadow-violet-600/30 transition-all text-center w-full flex items-center justify-center gap-1.5 rounded-full mt-4 py-2.5 px-4 text-xs cursor-pointer active:scale-95"
             >
               <Users className="w-4 h-4" />
-              <span>{groupSessions.length > 0 ? "Enter Study Rooms" : "+ Set Up Live Room"}</span>
+              <span>{groupSessions.length > 0 ? "Enter Study Rooms" : "Set Up Live Room"}</span>
             </button>
           </div>
         );
@@ -1168,7 +1171,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>+ Set Your First Deadline</span>
+                      <span>Set Your First Deadline</span>
                     </button>
                   </div>
                 ) : (
@@ -1405,6 +1408,269 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
         );
 
+      case "enrolled_courses": {
+        const getStrokeColor = (colorStr?: string) => {
+          if (!colorStr) return "#6366f1";
+          if (colorStr.includes("emerald")) return "#10b981";
+          if (colorStr.includes("violet")) return "#8b5cf6";
+          if (colorStr.includes("purple")) return "#a855f7";
+          if (colorStr.includes("rose")) return "#f43f5e";
+          if (colorStr.includes("amber")) return "#f59e0b";
+          if (colorStr.includes("teal")) return "#14b8a6";
+          if (colorStr.includes("cyan")) return "#06b6d4";
+          if (colorStr.includes("blue")) return "#3b82f6";
+          if (colorStr.includes("orange")) return "#f97316";
+          if (colorStr.includes("fuchsia")) return "#d946ef";
+          if (colorStr.includes("slate")) return "#64748b";
+          return "#6366f1";
+        };
+
+        const totalCourseTasks = assignments.length;
+        const totalCompletedTasks = assignments.filter((a) => a.status === "Completed").length;
+        const overallCoursePercent = totalCourseTasks > 0 ? Math.round((totalCompletedTasks / totalCourseTasks) * 100) : 0;
+
+        return (
+          <div className="space-y-4">
+            {/* Header with Title and Action Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200/80 dark:border-indigo-800/80 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0 shadow-xs">
+                  <GraduationCap className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-slate-900 dark:text-slate-100 text-base">
+                      Course Subjects & Task Progress
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold">
+                      {subjects.length} {subjects.length === 1 ? "Subject" : "Subjects"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    Individual subject completion rates • {totalCompletedTasks} of {totalCourseTasks} overall tasks completed ({overallCoursePercent}%)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setIsAddDeadlineModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                  title="Add a task or assignment"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Task</span>
+                </button>
+                {onOpenSubjectModal && (
+                  <button
+                    onClick={onOpenSubjectModal}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
+                    title="Manage enrolled subjects"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Manage Courses</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => navigate("planner")}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
+                  title="Open Study Planner"
+                >
+                  <FolderKanban className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Planner</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Subject Cards Grid */}
+            {subjects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center py-8 px-4 bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-500">
+                  <GraduationCap className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-200">No course subjects enrolled yet</p>
+                  <p className="text-xs text-slate-400 max-w-sm mt-1">
+                    Add your courses to track task completion rates and academic goals per subject.
+                  </p>
+                </div>
+                {onOpenSubjectModal && (
+                  <button
+                    onClick={onOpenSubjectModal}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  >
+                    + Enroll First Subject
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+                {subjects.map((subj) => {
+                  const subjAssignments = assignments.filter((a) => a.subjectId === subj.id);
+                  const total = subjAssignments.length;
+                  const completed = subjAssignments.filter((a) => a.status === "Completed").length;
+                  const pending = total - completed;
+                  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+                  const strokeColor = percent === 100 ? "#10b981" : getStrokeColor(subj.color);
+
+                  return (
+                    <div
+                      key={subj.id}
+                      className="group relative p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-800/60 hover:bg-slate-100/90 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 transition-all flex flex-col justify-between shadow-2xs hover:shadow-sm"
+                    >
+                      <div className="space-y-3">
+                        {/* Top: Icon, Title & Circular Progress Ring */}
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-xs shrink-0 ${subj.color || "bg-indigo-600 text-white"}`}>
+                              {subj.icon || "📚"}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate leading-tight">
+                                {subj.name}
+                              </h4>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {subj.code ? (
+                                  <span className="inline-block text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                    {subj.code}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">Course</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Visual Circular Progress Ring (SVG) */}
+                          <div
+                            className="relative w-10 h-10 shrink-0 flex items-center justify-center"
+                            title={`${percent}% completed (${completed}/${total} tasks)`}
+                          >
+                            <svg className="w-10 h-10 transform -rotate-90" viewBox="0 0 36 36">
+                              <circle
+                                cx="18"
+                                cy="18"
+                                r="14"
+                                stroke="currentColor"
+                                strokeWidth="3.2"
+                                className="text-slate-200 dark:text-slate-700/80"
+                                fill="transparent"
+                              />
+                              <circle
+                                cx="18"
+                                cy="18"
+                                r="14"
+                                stroke={strokeColor}
+                                strokeWidth="3.2"
+                                strokeDasharray={87.96}
+                                strokeDashoffset={total > 0 ? 87.96 - (percent / 100) * 87.96 : 87.96}
+                                strokeLinecap="round"
+                                fill="transparent"
+                                className="transition-all duration-500 ease-out"
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className={`text-[10px] font-black leading-none ${
+                                percent === 100
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : total === 0
+                                  ? "text-slate-400"
+                                  : "text-slate-800 dark:text-slate-200"
+                              }`}>
+                                {total === 0 ? "0%" : `${percent}%`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {subj.description && (
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                            {subj.description}
+                          </p>
+                        )}
+
+                        {/* Visual Progress Bar Section */}
+                        <div className="pt-2 border-t border-slate-200/50 dark:border-slate-700/50 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                              <CheckCircle2 className={`w-3 h-3 ${
+                                percent === 100
+                                  ? "text-emerald-500"
+                                  : total === 0
+                                  ? "text-slate-400"
+                                  : "text-indigo-500"
+                              }`} />
+                              <span>Tasks Done</span>
+                            </span>
+                            <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                              {completed} / {total} <span className="text-slate-400 text-[10px]">({percent}%)</span>
+                            </span>
+                          </div>
+
+                          <div className="w-full h-2 rounded-full bg-slate-200/80 dark:bg-slate-700 overflow-hidden relative">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                percent === 100
+                                  ? "bg-emerald-500"
+                                  : percent > 0
+                                  ? "bg-indigo-600 dark:bg-indigo-500"
+                                  : "bg-slate-300 dark:bg-slate-600"
+                              }`}
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-slate-400 font-medium truncate">
+                              {total === 0
+                                ? "No tasks yet"
+                                : pending === 0
+                                ? "All tasks completed! 🎉"
+                                : `${pending} remaining`}
+                            </span>
+                            <span className={`font-black text-[9px] px-1.5 py-0.2 rounded-md shrink-0 ${
+                              percent === 100
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                                : percent > 0
+                                ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+                                : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                            }`}>
+                              {percent === 100 ? "100% DONE" : total === 0 ? "NO TASKS" : `${percent}% DONE`}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="pt-2.5 mt-2.5 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-xs">
+                        <button
+                          onClick={() => {
+                            setNewDeadlineSubjectId(subj.id);
+                            setIsAddDeadlineModalOpen(true);
+                          }}
+                          className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add Task</span>
+                        </button>
+
+                        <button
+                          onClick={() => navigate("planner")}
+                          className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>View Tasks</span>
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      }
+
       default:
         return null;
     }
@@ -1419,6 +1685,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         return "md:col-span-2 lg:col-span-2 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-amber-500/10 dark:from-amber-950/40 dark:via-slate-900 dark:to-indigo-950/30 rounded-[2rem] p-6 shadow-sm border border-amber-300/40 dark:border-amber-700/40 relative overflow-hidden";
       case "learning_progress":
         return "md:col-span-2 lg:col-span-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-700 dark:from-indigo-700 dark:to-blue-900 rounded-[2rem] p-6 text-white shadow-lg shadow-indigo-500/10";
+      case "enrolled_courses":
+        return "md:col-span-2 lg:col-span-4 bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-sm border border-slate-200 dark:border-slate-800";
       case "deadlines":
         return "md:col-span-2 lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-sm border border-slate-200 dark:border-slate-800";
       case "recent_updates":

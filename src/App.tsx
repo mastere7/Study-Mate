@@ -17,6 +17,8 @@ import { GroupStudyScreen } from "./components/screens/GroupStudyScreen";
 import { CurriculumMapScreen } from "./components/screens/CurriculumMapScreen";
 import { AuthModal } from "./components/auth/AuthModal";
 import { CourseSubjectModal } from "./components/CourseSubjectModal";
+import { MobileBottomNav } from "./components/MobileBottomNav";
+import { OfflineStatusBanner } from "./components/OfflineStatusBanner";
 
 import {
   storageService,
@@ -46,7 +48,7 @@ import {
 } from "./types";
 import { Plus, Trash2, X, ArrowLeft, Home, ChevronRight } from "lucide-react";
 import { pushNotificationService } from "./services/pushNotificationService";
-import { SUPPORTED_LANGUAGES } from "./services/i18n";
+import { SUPPORTED_LANGUAGES, LanguageProvider, getTranslation } from "./services/i18n";
 import {
   auth,
   onAuthStateChanged,
@@ -55,6 +57,9 @@ import {
   syncFullCollection,
   syncItemToFirestore,
   deleteItemFromFirestore,
+  subscribeToGroupSessions,
+  saveGroupSessionToFirestore,
+  deleteGroupSessionFromFirestore,
 } from "./services/firebase";
 
 const tabNames: Record<string, string> = {
@@ -381,6 +386,20 @@ export default function App() {
     }
   };
 
+  // Live real-time listener for Group Study sessions across all users
+  useEffect(() => {
+    const unsub = subscribeToGroupSessions((remoteSessions) => {
+      if (remoteSessions && Array.isArray(remoteSessions)) {
+        const clean = remoteSessions.filter(
+          (r) => r && r.id && !r.id.startsWith("sample_") && r.isLive !== false
+        );
+        setGroupSessions(clean);
+        storageService.saveGroupSessions(clean);
+      }
+    });
+    return () => unsub();
+  }, []);
+
   const handleSaveNotifications = (updated: AppNotification[]) => {
     setNotifications(updated);
     storageService.saveNotifications(updated);
@@ -390,8 +409,19 @@ export default function App() {
   };
 
   const handleSaveGroupSessions = (updated: GroupStudySession[]) => {
+    const currentIds = new Set(updated.map((s) => s.id));
+    groupSessions.forEach((oldSession) => {
+      if (!currentIds.has(oldSession.id)) {
+        deleteGroupSessionFromFirestore(oldSession.id);
+      }
+    });
+
     setGroupSessions(updated);
     storageService.saveGroupSessions(updated);
+
+    updated.forEach((session) => {
+      saveGroupSessionToFirestore(session);
+    });
   };
 
   // Subject Management
@@ -438,89 +468,90 @@ export default function App() {
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-[#080c14] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
-      {/* Top Navbar */}
-      <Navbar
-        user={user}
-        notifications={notifications}
-        onSaveNotifications={handleSaveNotifications}
-        unreadNotificationsCount={unreadCount}
-        subjects={subjects}
-        isDarkMode={themeMode === "dark" || (themeMode === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches)}
-        themeMode={themeMode}
-        onThemeModeChange={setThemeMode}
-        onToggleDarkMode={toggleDarkMode}
-        currentLanguage={language}
-        onLanguageChange={setLanguage}
-        onOpenAuthModal={() => setIsAuthOpen(true)}
-        onOpenNotifications={() => handleSelectTab("notifications")}
-        onOpenSubjectModal={() => setIsSubjectModalOpen(true)}
-        isSidebarCollapsed={isSidebarCollapsed}
-        onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        isMobileMenuOpen={isMobileMenuOpen}
-        onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        isFirebaseAuthenticated={isFirebaseAuthenticated}
-        onNavigateScreen={handleSelectTab}
-      />
-
-      {/* Main Container Layout - Fully responsive for mobile, tablets, and laptops */}
-      <div className="flex w-full min-h-[calc(100vh-57px)]">
-        {/* Left Navigation Sidebar */}
-        <Sidebar
-          activeTab={currentTab}
-          onTabSelect={handleSelectTab}
+    <LanguageProvider initialLanguage={language} onLanguageChange={setLanguage}>
+      <div className="min-h-screen bg-slate-100 dark:bg-[#080c14] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
+        {/* Top Navbar */}
+        <Navbar
+          user={user}
+          notifications={notifications}
+          onSaveNotifications={handleSaveNotifications}
           unreadNotificationsCount={unreadCount}
           subjects={subjects}
-          activeSubjectFilter={activeSubjectFilter}
-          onSelectSubjectFilter={setActiveSubjectFilter}
-          onOpenSubjectModal={() => setIsSubjectModalOpen(true)}
-          isOpenMobile={isMobileMenuOpen}
-          onCloseMobile={() => setIsMobileMenuOpen(false)}
-          isCollapsed={isSidebarCollapsed}
+          isDarkMode={themeMode === "dark" || (themeMode === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches)}
+          themeMode={themeMode}
+          onThemeModeChange={setThemeMode}
+          onToggleDarkMode={toggleDarkMode}
           currentLanguage={language}
+          onLanguageChange={setLanguage}
+          onOpenAuthModal={() => setIsAuthOpen(true)}
+          onOpenNotifications={() => handleSelectTab("notifications")}
+          onOpenSubjectModal={() => setIsSubjectModalOpen(true)}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          isMobileMenuOpen={isMobileMenuOpen}
+          onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          isFirebaseAuthenticated={isFirebaseAuthenticated}
+          onNavigateScreen={handleSelectTab}
         />
 
-        {/* Main Content Area */}
-        <main className="flex-1 min-w-0 w-full overflow-x-hidden p-3 sm:p-5 md:p-6 lg:p-8 pb-16 transition-all duration-300">
-          {/* Universal Backward Navigation Bar */}
-          {currentTab !== "dashboard" && (
-            <div className="mb-6 p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in transition-all">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleGoBack}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all shadow-xs"
-                  title="Go to previous view"
-                >
-                  <ArrowLeft className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <span>Back</span>
-                </button>
+        {/* Main Container Layout - Fully responsive for mobile, tablets, and laptops */}
+        <div className="flex w-full min-h-[calc(100vh-57px)]">
+          {/* Left Navigation Sidebar */}
+          <Sidebar
+            activeTab={currentTab}
+            onTabSelect={handleSelectTab}
+            unreadNotificationsCount={unreadCount}
+            subjects={subjects}
+            activeSubjectFilter={activeSubjectFilter}
+            onSelectSubjectFilter={setActiveSubjectFilter}
+            onOpenSubjectModal={() => setIsSubjectModalOpen(true)}
+            isOpenMobile={isMobileMenuOpen}
+            onCloseMobile={() => setIsMobileMenuOpen(false)}
+            isCollapsed={isSidebarCollapsed}
+            currentLanguage={language}
+          />
 
-                <button
-                  onClick={handleGoHome}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all"
-                  title="Return to Home Dashboard"
-                >
-                  <Home className="w-3.5 h-3.5" />
-                  <span>Home</span>
-                </button>
+          {/* Main Content Area */}
+          <main className="flex-1 min-w-0 w-full overflow-x-hidden p-3 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-12 transition-all duration-300">
+            {/* Universal Backward Navigation Bar */}
+            {currentTab !== "dashboard" && (
+              <div className="mb-6 p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in transition-all">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleGoBack}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all shadow-xs"
+                    title="Go to previous view"
+                  >
+                    <ArrowLeft className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>{getTranslation(language, "back", "Back")}</span>
+                  </button>
 
-                <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 font-medium ml-2 border-l border-slate-200 dark:border-slate-800 pl-3">
-                  <span>Home</span>
-                  <ChevronRight className="w-3 h-3" />
-                  <span className="font-bold text-slate-800 dark:text-slate-200">
-                    {tabNames[currentTab] || currentTab}
+                  <button
+                    onClick={handleGoHome}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all"
+                    title="Return to Home Dashboard"
+                  >
+                    <Home className="w-3.5 h-3.5" />
+                    <span>{getTranslation(language, "home", "Home")}</span>
+                  </button>
+
+                  <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 font-medium ml-2 border-l border-slate-200 dark:border-slate-800 pl-3">
+                    <span>{getTranslation(language, "home", "Home")}</span>
+                    <ChevronRight className="w-3 h-3" />
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {getTranslation(language, currentTab, tabNames[currentTab] || currentTab)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
+                  <span className="hidden xs:inline">{getTranslation(language, "currentView", "Current View")}:</span>
+                  <span className="px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-300 font-bold text-[11px]">
+                    {getTranslation(language, currentTab, tabNames[currentTab] || currentTab)}
                   </span>
                 </div>
               </div>
-
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
-                <span className="hidden xs:inline">Current View:</span>
-                <span className="px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-300 font-bold text-[11px]">
-                  {tabNames[currentTab] || currentTab}
-                </span>
-              </div>
-            </div>
-          )}
+            )}
 
           {currentTab === "dashboard" && (
             <HomeDashboard
@@ -679,11 +710,25 @@ export default function App() {
         isOpen={isSubjectModalOpen}
         onClose={() => setIsSubjectModalOpen(false)}
         subjects={subjects}
+        assignments={assignments}
         onSaveSubjects={handleSaveSubjects}
         activeSubjectFilter={activeSubjectFilter}
         onSelectSubjectFilter={setActiveSubjectFilter}
         currentUserId={user.id}
       />
+
+      {/* Mobile Bottom Navigation Bar for Ergonomic Phone Thumb Access */}
+      <MobileBottomNav
+        activeTab={currentTab}
+        onTabSelect={handleSelectTab}
+        onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+        unreadNotificationsCount={notifications.filter((n) => !n.isRead).length}
+        currentLanguage={language}
+      />
+
+      {/* Offline Status & Service Worker Indicator */}
+      <OfflineStatusBanner />
     </div>
+  </LanguageProvider>
   );
 }

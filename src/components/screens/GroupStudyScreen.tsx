@@ -40,11 +40,16 @@ import {
   Clock,
   Layers,
   Sparkle,
+  ShieldCheck,
+  UserCheck,
+  UserX,
+  Lock,
 } from "lucide-react";
 import {
   GroupStudySession,
   GroupStudyParticipant,
   GroupStudyChatMessage,
+  GroupJoinRequest,
   GroupRoomType,
   Subject,
   UserProfile,
@@ -53,6 +58,10 @@ import {
   FlashcardDeck,
 } from "../../types";
 import { audioSynthService } from "../../services/audioSynth";
+import { CreateRoomModal } from "./group/CreateRoomModal";
+import { JoinCodeModal } from "./group/JoinCodeModal";
+import { HostRequestsPanel } from "./group/HostRequestsPanel";
+import { GroupRoomCard } from "./group/GroupRoomCard";
 
 interface GroupStudyScreenProps {
   user: UserProfile;
@@ -82,20 +91,13 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   const [filterType, setFilterType] = useState<string>("all");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Create Modal State
+  // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
-  const [createTitle, setCreateTitle] = useState<string>("");
-  const [createSubjectId, setCreateSubjectId] = useState<string>(subjects[0]?.id || "custom");
-  const [createCustomSubjectName, setCreateCustomSubjectName] = useState<string>("");
-  const [createRoomType, setCreateRoomType] = useState<GroupRoomType>("pomodoro");
-  const [createMaxParticipants, setCreateMaxParticipants] = useState<number>(8);
-  const [createDescription, setCreateDescription] = useState<string>("");
-  const [createCustomCode, setCreateCustomCode] = useState<string>("");
-  const [createTimerDuration, setCreateTimerDuration] = useState<number>(25);
-  const [createAmbientSound, setCreateAmbientSound] = useState<string>("none");
+  const [codeModalRoom, setCodeModalRoom] = useState<GroupStudySession | null>(null);
+  const [isJoinCodeModalOpen, setIsJoinCodeModalOpen] = useState<boolean>(false);
 
   // Active Room state
-  const [activeRoomTab, setActiveRoomTab] = useState<"timer" | "notes" | "chat" | "screenshare">("timer");
+  const [activeRoomTab, setActiveRoomTab] = useState<"timer" | "notes" | "chat" | "screenshare" | "requests">("timer");
   const [sharedNotesPad, setSharedNotesPad] = useState<string>("");
   const [chatInput, setChatInput] = useState<string>("");
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -121,7 +123,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3200);
   };
 
   const activeRoom = groupSessions.find((r) => r.id === activeRoomId);
@@ -199,16 +201,6 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     }
   };
 
-  // Generate random room code
-  const handleGenerateRandomCode = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let result = "";
-    for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    setCreateCustomCode(result);
-  };
-
   // Handle Screen Sharing via Display Media API
   const handleToggleScreenShare = async () => {
     if (isSharingScreen) {
@@ -225,7 +217,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        throw new Error("Display Media API is not supported in this browser version.");
+        throw new Error("Display Media API is not supported in this browser environment.");
       }
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -254,11 +246,11 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
       if (isPolicyRestriction) {
         setScreenShareError(
-          "Screen capture is restricted inside embedded iframe previews by browser security policies. You can open the app in a new tab for native WebRTC screen sharing, or launch the interactive Study Presenter below."
+          "Screen capture inside iframe previews is guarded by browser policies. You can open the app in a new tab for native WebRTC screen sharing, or launch the interactive Study Presenter mode."
         );
       } else if (err?.name !== "AbortError") {
         setScreenShareError(
-          "Screen sharing permission was not granted. You can open the app in a new tab or use the interactive study presenter."
+          "Screen sharing was cancelled or unavailable. Use the interactive Study Presenter below."
         );
       }
     }
@@ -276,17 +268,19 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeRoom?.chatMessages]);
 
-  // Handle Joining a Session by Code or Click
+  // Handle Joining a Session by Code (Instant admission)
   const handleJoinByCode = (codeToJoin?: string) => {
     const code = (codeToJoin || joinCodeInput).trim().toUpperCase();
     if (!code) {
-      setJoinCodeError("Please enter a room code (e.g. FOCUS1 or CS101)");
+      setJoinCodeError("Please enter a 6-character room code (e.g. FOCUS-123 or BIO-404)");
       return;
     }
 
-    const room = groupSessions.find((r) => r.code.toUpperCase() === code || r.id === code);
+    const room = groupSessions.find(
+      (r) => r.code.toUpperCase() === code || r.id.toUpperCase() === code
+    );
     if (!room) {
-      setJoinCodeError(`No active room found with code "${code}". Check code and try again.`);
+      setJoinCodeError(`No active room found with code "${code}". Please verify and try again.`);
       return;
     }
 
@@ -297,7 +291,11 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       const newParticipant: GroupStudyParticipant = {
         id: user.id || `u_${Date.now()}`,
         name: user.name || "Student",
-        avatarUrl: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Student")}`,
+        avatarUrl:
+          user.avatarUrl ||
+          `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+            user.name || "Student"
+          )}`,
         role: "member",
         status: "studying",
         isMuted: false,
@@ -308,14 +306,18 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
         id: `sys_${Date.now()}`,
         senderId: "system",
         senderName: "StudyMate Bot",
-        text: `${user.name || "Student"} joined the study room! 👋`,
+        text: `${user.name || "Student"} joined the study room with Room Code! 🔑`,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         type: "system",
       };
 
+      // Remove any pending join request for this user since they used the code
+      const updatedPending = (room.pendingRequests || []).filter((r) => r.userId !== user.id);
+
       const updatedRoom: GroupStudySession = {
         ...room,
         currentParticipants: [...room.currentParticipants, newParticipant],
+        pendingRequests: updatedPending,
         chatMessages: [...room.chatMessages, systemMsg],
       };
 
@@ -325,83 +327,139 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
     setActiveRoomId(room.id);
     setJoinCodeInput("");
+    setIsJoinCodeModalOpen(false);
+    setCodeModalRoom(null);
+    showToast(`Joined "${room.title}"!`);
   };
 
-  // Handle Creating a Custom User Group Room
-  const handleCreateRoom = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!createTitle.trim()) return;
-
-    let subjectName = "General Study";
-    if (createSubjectId === "custom" && createCustomSubjectName.trim()) {
-      subjectName = createCustomSubjectName.trim();
-    } else {
-      const selected = subjects.find((s) => s.id === createSubjectId);
-      if (selected) subjectName = selected.name;
+  // Handle Request to Join (When room requires host approval)
+  const handleRequestToJoin = (room: GroupStudySession) => {
+    // If open access, join directly
+    if (room.requireApproval === false) {
+      handleJoinByCode(room.code);
+      return;
     }
 
-    const generatedCode =
-      createCustomCode.trim().toUpperCase() ||
-      `${subjectName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "") || "STUDY"}-${Math.floor(
-        100 + Math.random() * 900
-      )}`;
+    // Check if already a member
+    if (room.currentParticipants.some((p) => p.id === user.id)) {
+      setActiveRoomId(room.id);
+      return;
+    }
 
-    const hostParticipant: GroupStudyParticipant = {
-      id: user.id || `u_${Date.now()}`,
-      name: user.name || "Study Host",
-      avatarUrl: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Host")}`,
-      role: "host",
+    // Check if already pending
+    const existingReq = (room.pendingRequests || []).find((r) => r.userId === user.id);
+    if (existingReq && existingReq.status === "pending") {
+      showToast(`Your join request is already pending approval by host ${room.hostName}. ⏳`);
+      return;
+    }
+
+    const newRequest: GroupJoinRequest = {
+      id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      userId: user.id || `u_${Date.now()}`,
+      userName: user.name || "Student",
+      userAvatar: user.avatarUrl,
+      userEmail: user.email,
+      requestedAt: new Date().toISOString(),
+      status: "pending",
+    };
+
+    const updatedRoom: GroupStudySession = {
+      ...room,
+      pendingRequests: [...(room.pendingRequests || []).filter((r) => r.userId !== user.id), newRequest],
+    };
+
+    const updatedList = groupSessions.map((r) => (r.id === room.id ? updatedRoom : r));
+    onSaveGroupSessions(updatedList);
+    showToast(`Join request sent to host ${room.hostName}! Waiting for approval.`);
+  };
+
+  // Host: Accept Student Join Request
+  const handleAcceptRequest = (req: GroupJoinRequest) => {
+    if (!activeRoom) return;
+
+    const newParticipant: GroupStudyParticipant = {
+      id: req.userId,
+      name: req.userName,
+      avatarUrl: req.userAvatar,
+      role: "member",
       status: "studying",
       isMuted: false,
       joinedAt: new Date().toISOString(),
     };
 
-    const initialSystemMsg: GroupStudyChatMessage = {
-      id: `sys_${Date.now()}`,
+    const systemMsg: GroupStudyChatMessage = {
+      id: `sys_adm_${Date.now()}`,
       senderId: "system",
       senderName: "StudyMate Bot",
-      text: `Live Study Room created by ${user.name || "Host"}. Share code "${generatedCode}" with classmates!`,
+      text: `${req.userName} was accepted into the study room by ${user.name || "Host"}! 👋`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       type: "system",
     };
 
-    const newRoom: GroupStudySession = {
-      id: `room_${Date.now()}`,
-      code: generatedCode,
-      title: createTitle.trim(),
-      subjectId: createSubjectId,
-      subjectName: subjectName,
-      description: createDescription.trim() || `Collaborative ${createRoomType} study session.`,
-      hostId: user.id || `u_${Date.now()}`,
-      hostName: user.name || "Study Host",
-      hostAvatar: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Host")}`,
-      roomType: createRoomType,
-      maxParticipants: Number(createMaxParticipants) || 8,
-      currentParticipants: [hostParticipant],
-      isLive: true,
-      createdDate: new Date().toISOString(),
-      sharedNotesPad: `# ${createTitle}\n\n**Topic:** ${subjectName}\n**Host:** ${user.name || "Student"}\n\nCollaboratively type study notes and key takeaways here. All members can edit in real time!`,
-      timerState: {
-        isRunning: false,
-        mode: "focus",
-        secondsLeft: createTimerDuration * 60,
-      },
-      chatMessages: [initialSystemMsg],
+    const updatedPending = (activeRoom.pendingRequests || []).filter((r) => r.id !== req.id);
+    const updatedParticipants = [...activeRoom.currentParticipants, newParticipant];
+
+    const updatedRoom: GroupStudySession = {
+      ...activeRoom,
+      currentParticipants: updatedParticipants,
+      pendingRequests: updatedPending,
+      chatMessages: [...activeRoom.chatMessages, systemMsg],
     };
 
+    const updatedList = groupSessions.map((r) => (r.id === activeRoom.id ? updatedRoom : r));
+    onSaveGroupSessions(updatedList);
+    showToast(`Admitted ${req.userName} to the study session.`);
+  };
+
+  // Host: Decline Student Join Request
+  const handleDeclineRequest = (reqId: string, reqName: string) => {
+    if (!activeRoom) return;
+
+    const updatedPending = (activeRoom.pendingRequests || []).filter((r) => r.id !== reqId);
+    const updatedRoom: GroupStudySession = {
+      ...activeRoom,
+      pendingRequests: updatedPending,
+    };
+
+    const updatedList = groupSessions.map((r) => (r.id === activeRoom.id ? updatedRoom : r));
+    onSaveGroupSessions(updatedList);
+    showToast(`Declined join request from ${reqName}.`);
+  };
+
+  // Host: Remove / Kick a participant
+  const handleKickParticipant = (participantId: string, participantName: string) => {
+    if (!activeRoom) return;
+    if (participantId === activeRoom.hostId) return;
+
+    if (confirm(`Remove ${participantName} from this study session?`)) {
+      const updatedParticipants = activeRoom.currentParticipants.filter((p) => p.id !== participantId);
+      const kickMsg: GroupStudyChatMessage = {
+        id: `sys_kick_${Date.now()}`,
+        senderId: "system",
+        senderName: "StudyMate Bot",
+        text: `${participantName} was removed from the session by the host.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        type: "system",
+      };
+
+      const updatedRoom: GroupStudySession = {
+        ...activeRoom,
+        currentParticipants: updatedParticipants,
+        chatMessages: [...activeRoom.chatMessages, kickMsg],
+      };
+
+      const updatedList = groupSessions.map((r) => (r.id === activeRoom.id ? updatedRoom : r));
+      onSaveGroupSessions(updatedList);
+      showToast(`${participantName} has been removed.`);
+    }
+  };
+
+  // Handle Room Created from Modal
+  const handleRoomCreated = (newRoom: GroupStudySession) => {
     const updatedList = [newRoom, ...groupSessions];
     onSaveGroupSessions(updatedList);
-    setIsCreateModalOpen(false);
-
-    // Reset Form
-    setCreateTitle("");
-    setCreateDescription("");
-    setCreateCustomCode("");
-    setCreateCustomSubjectName("");
-
-    // Join the newly created room immediately
     setActiveRoomId(newRoom.id);
-    showToast(`Live room "${newRoom.title}" created successfully!`);
+    showToast(`Live room "${newRoom.title}" launched successfully!`);
   };
 
   // Quick 1-Click Room Preset Creation
@@ -410,7 +468,11 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     const hostParticipant: GroupStudyParticipant = {
       id: user.id || `u_${Date.now()}`,
       name: user.name || "Study Host",
-      avatarUrl: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Host")}`,
+      avatarUrl:
+        user.avatarUrl ||
+        `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+          user.name || "Host"
+        )}`,
       role: "host",
       status: "studying",
       isMuted: false,
@@ -432,14 +494,20 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       title: title,
       subjectId: subjects[0]?.id || "s_general",
       subjectName: subjects[0]?.name || "General Coursework",
-      description: `Instant ${duration}-minute collaborative ${type} session.`,
+      description: `Instant ${duration}-minute collaborative ${type} sprint.`,
       hostId: user.id || `u_${Date.now()}`,
       hostName: user.name || "Study Host",
-      hostAvatar: user.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "Host")}`,
+      hostAvatar:
+        user.avatarUrl ||
+        `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+          user.name || "Host"
+        )}`,
       roomType: type,
       maxParticipants: 10,
       currentParticipants: [hostParticipant],
       isLive: true,
+      requireApproval: true,
+      pendingRequests: [],
       createdDate: new Date().toISOString(),
       sharedNotesPad: `# ${title}\n\nType key study notes, formulas, or questions here!`,
       timerState: {
@@ -585,6 +653,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   // -------------------------------------------------------------
   if (activeRoom) {
     const isHost = activeRoom.hostId === user.id || activeRoom.currentParticipants[0]?.id === user.id;
+    const pendingRequests = (activeRoom.pendingRequests || []).filter((r) => r.status === "pending");
 
     return (
       <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-in fade-in">
@@ -667,7 +736,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
               }`}
             >
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              <span>{isMuted ? "Muted" : "Mic On"}</span>
+              <span>{isMuted ? "Muted" : "Mic Live"}</span>
             </button>
 
             {isHost && (
@@ -682,6 +751,15 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             )}
           </div>
         </div>
+
+        {/* Host Alert Banner for Pending Requests */}
+        {isHost && pendingRequests.length > 0 && (
+          <HostRequestsPanel
+            room={activeRoom}
+            onAcceptRequest={handleAcceptRequest}
+            onDeclineRequest={handleDeclineRequest}
+          />
+        )}
 
         {/* Main Room Workspace Grid (Left: Active Tab Content, Right: Roster & Live Chat) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -727,6 +805,23 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                   <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse absolute top-2 right-2" />
                 )}
               </button>
+
+              {isHost && (
+                <button
+                  onClick={() => setActiveRoomTab("requests")}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl font-bold text-xs transition-all relative cursor-pointer ${
+                    activeRoomTab === "requests"
+                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                      : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Requests ({pendingRequests.length})</span>
+                  {pendingRequests.length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  )}
+                </button>
+              )}
             </div>
 
             {/* TAB 1: GROUP POMODORO & FOCUS TIMER */}
@@ -839,41 +934,63 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
                 {/* Live Member Status Grid */}
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-left">
-                  <h4 className="text-xs font-bold uppercase text-slate-400 dark:text-slate-500 mb-3 tracking-wider">
-                    Member Focus Status ({activeRoom.currentParticipants.length})
+                  <h4 className="text-xs font-bold uppercase text-slate-400 dark:text-slate-500 mb-3 tracking-wider flex items-center justify-between">
+                    <span>Active Study Members ({activeRoom.currentParticipants.length})</span>
+                    <span className="text-[11px] text-slate-400 lowercase font-normal">
+                      max {activeRoom.maxParticipants}
+                    </span>
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {activeRoom.currentParticipants.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800"
-                      >
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={
-                              p.avatarUrl ||
-                              `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(p.name)}`
-                            }
-                            alt={p.name}
-                            className="w-8 h-8 rounded-full object-cover border border-indigo-400"
-                          />
-                          <div>
-                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1">
-                              <span>{p.name}</span>
-                              {p.role === "host" && <Crown className="w-3.5 h-3.5 text-amber-500" />}
-                            </p>
-                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              Active Studying
+                    {activeRoom.currentParticipants.map((p) => {
+                      const isHostMember = p.id === activeRoom.hostId || p.role === "host";
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800"
+                        >
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={
+                                p.avatarUrl ||
+                                `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(p.name)}`
+                              }
+                              alt={p.name}
+                              className="w-8 h-8 rounded-full object-cover border border-indigo-400"
+                            />
+                            <div>
+                              <p className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1">
+                                <span>{p.name}</span>
+                                {isHostMember && <Crown className="w-3.5 h-3.5 text-amber-500" />}
+                                {p.id === user.id && (
+                                  <span className="text-[10px] px-1 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-600 font-bold">
+                                    You
+                                  </span>
+                                )}
+                              </p>
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Active Studying
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] px-2 py-0.5 rounded-md font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                              {p.isMuted ? "Muted" : "Mic Live"}
                             </span>
+                            {isHost && p.id !== user.id && (
+                              <button
+                                onClick={() => handleKickParticipant(p.id, p.name)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
+                                title={`Remove ${p.name} from room`}
+                              >
+                                <UserX className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
-
-                        <span className="text-[10px] px-2 py-0.5 rounded-md font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                          {p.isMuted ? "Muted" : "Mic Live"}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -910,7 +1027,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
                 <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
                   <span>{sharedNotesPad.split(/\s+/).filter(Boolean).length} words • {sharedNotesPad.length} characters</span>
-                  <span>Auto-saved to live session memory</span>
+                  <span>Auto-saved to live session state</span>
                 </div>
               </div>
             )}
@@ -1084,6 +1201,17 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                 </div>
               </div>
             )}
+
+            {/* TAB 4: HOST MANAGE REQUESTS */}
+            {activeRoomTab === "requests" && isHost && (
+              <div className="space-y-4">
+                <HostRequestsPanel
+                  room={activeRoom}
+                  onAcceptRequest={handleAcceptRequest}
+                  onDeclineRequest={handleDeclineRequest}
+                />
+              </div>
+            )}
           </div>
 
           {/* Right Sidebar: Live Chat & Participants (4 Cols) */}
@@ -1234,7 +1362,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             <span>Group Study & Collaborative Rooms</span>
           </h2>
           <p className="text-xs sm:text-sm text-indigo-200/90 max-w-xl leading-relaxed">
-            Set up your own custom live study rooms, sync Pomodoro focus timers, share screens, and collaborate with classmates in real time!
+            Set up your custom live study rooms, sync Pomodoro focus timers, share screens, and collaborate with classmates in real time!
           </p>
         </div>
 
@@ -1245,7 +1373,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition-all cursor-pointer active:scale-95"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Set Up Your Live Room</span>
+            <span>Set Up Your Live Room</span>
           </button>
 
           {groupSessions.length > 0 && (
@@ -1330,7 +1458,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                 Have a Room Code?
               </h4>
               <p className="text-xs text-slate-500">
-                Enter your classmate’s 6-character room code to join immediately
+                Enter your classmate’s 6-character room code to join immediately without waiting
               </p>
             </div>
           </div>
@@ -1348,9 +1476,10 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             />
             <button
               onClick={() => handleJoinByCode()}
-              className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-500/20 transition-all shrink-0 cursor-pointer active:scale-95"
+              className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-500/20 transition-all shrink-0 cursor-pointer active:scale-95 flex items-center gap-1.5"
             >
-              Join Session
+              <KeyRound className="w-4 h-4" />
+              <span>Join Session</span>
             </button>
           </div>
         </div>
@@ -1403,318 +1532,75 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       {/* ROOMS DIRECTORY GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredRooms.length === 0 ? (
-          <div className="col-span-full text-center py-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-3">
-            <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-950/60 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mx-auto">
-              <Users className="w-7 h-7" />
+          <div className="col-span-full text-center py-14 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-4">
+            <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-950/60 rounded-3xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mx-auto shadow-inner">
+              <Users className="w-8 h-8" />
             </div>
-            <h4 className="font-bold text-base text-slate-900 dark:text-slate-100">
-              No Live Study Rooms Active
-            </h4>
-            <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-              You haven't set up any live study rooms yet. Set up your custom study room above or use one of the quick 1-click presets!
-            </p>
-            <div className="pt-2">
+            <div className="space-y-1">
+              <h4 className="font-extrabold text-lg text-slate-900 dark:text-slate-100">
+                No Live Study Rooms Active
+              </h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                All live rooms are empty. Set up your custom study room above or join your classmates using their 6-character room code!
+              </p>
+            </div>
+            <div className="pt-2 flex items-center justify-center gap-3 flex-wrap">
               <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all inline-flex items-center gap-2 cursor-pointer active:scale-95"
               >
                 <Plus className="w-4 h-4" />
-                <span>+ Set Up Your Live Room</span>
+                <span>Set Up Your Live Room</span>
+              </button>
+              <button
+                onClick={() => {
+                  setCodeModalRoom(null);
+                  setIsJoinCodeModalOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Join with Code</span>
               </button>
             </div>
           </div>
         ) : (
-          filteredRooms.map((room) => {
-            const isFull = room.currentParticipants.length >= room.maxParticipants;
-            const isMember = room.currentParticipants.some((p) => p.id === user.id);
-            const isHost = room.hostId === user.id || room.currentParticipants[0]?.id === user.id;
-
-            return (
-              <div
-                key={room.id}
-                className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-md hover:shadow-lg transition-all flex flex-col justify-between space-y-4 group"
-              >
-                <div>
-                  {/* Top Tags */}
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold uppercase">
-                      {room.subjectName}
-                    </span>
-
-                    <div className="flex items-center gap-1.5">
-                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        LIVE NOW
-                      </span>
-
-                      {isHost && (
-                        <button
-                          onClick={() => handleDeleteRoom(room.id, room.title)}
-                          className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
-                          title="Delete room"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Title */}
-                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 line-clamp-2">
-                    {room.title}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                    {room.description}
-                  </p>
-
-                  {/* Host & Avatars */}
-                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <img
-                        src={
-                          room.hostAvatar ||
-                          `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(room.hostName)}`
-                        }
-                        alt={room.hostName}
-                        className="w-7 h-7 rounded-full object-cover border border-indigo-500"
-                      />
-                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                        <span>{room.hostName}</span>
-                        {isHost && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-bold">
-                            You
-                          </span>
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1 text-xs font-bold text-slate-500 dark:text-slate-400">
-                      <Users className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>
-                        {room.currentParticipants.length} / {room.maxParticipants}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer Join Action */}
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <span className="text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2.5 py-1 rounded-lg">
-                    Code: {room.code}
-                  </span>
-
-                  <button
-                    onClick={() => handleJoinByCode(room.code)}
-                    disabled={isFull && !isMember}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
-                      isMember
-                        ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-                        : isFull
-                        ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                        : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-                    }`}
-                  >
-                    {isMember ? "Enter Active Room" : isFull ? "Room Full" : "Join Room"}
-                  </button>
-                </div>
-              </div>
-            );
-          })
+          filteredRooms.map((room) => (
+            <GroupRoomCard
+              key={room.id}
+              room={room}
+              user={user}
+              onEnterRoom={(id) => setActiveRoomId(id)}
+              onRequestJoin={handleRequestToJoin}
+              onOpenCodeModal={(r) => {
+                setCodeModalRoom(r);
+                setIsJoinCodeModalOpen(true);
+              }}
+              onDeleteRoom={handleDeleteRoom}
+            />
+          ))
         )}
       </div>
 
-      {/* CREATE / SET UP LIVE ROOM MODAL */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 my-8 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                    Set Up Your Live Study Room
-                  </h3>
-                  <p className="text-[11px] text-slate-400">Configure parameters, duration, and invite classmates</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* CREATE LIVE ROOM MODAL */}
+      <CreateRoomModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        user={user}
+        subjects={subjects}
+        onRoomCreated={handleRoomCreated}
+      />
 
-            <form onSubmit={handleCreateRoom} className="space-y-4">
-              {/* Room Title */}
-              <div>
-                <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                  Room Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={createTitle}
-                  onChange={(e) => setCreateTitle(e.target.value)}
-                  placeholder="e.g. Calculus Midterm Problem Set Sprint"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
-                />
-              </div>
-
-              {/* Subject Select or Custom Subject */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold uppercase text-slate-500">
-                  Course Subject
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <select
-                    value={createSubjectId}
-                    onChange={(e) => setCreateSubjectId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                    <option value="custom">+ Custom Subject Name</option>
-                  </select>
-
-                  {createSubjectId === "custom" ? (
-                    <input
-                      type="text"
-                      value={createCustomSubjectName}
-                      onChange={(e) => setCreateCustomSubjectName(e.target.value)}
-                      placeholder="e.g. Molecular Biology"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  ) : (
-                    <select
-                      value={createRoomType}
-                      onChange={(e) => setCreateRoomType(e.target.value as GroupRoomType)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="pomodoro">Pomodoro Focus Room</option>
-                      <option value="discussion">Discussion & Q&A</option>
-                      <option value="quiz_challenge">Quiz & Flashcard Arena</option>
-                      <option value="silent_focus">Silent Background Study</option>
-                    </select>
-                  )}
-                </div>
-              </div>
-
-              {createSubjectId === "custom" && (
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Room Type
-                  </label>
-                  <select
-                    value={createRoomType}
-                    onChange={(e) => setCreateRoomType(e.target.value as GroupRoomType)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="pomodoro">Pomodoro Focus Room</option>
-                    <option value="discussion">Discussion & Q&A</option>
-                    <option value="quiz_challenge">Quiz & Flashcard Arena</option>
-                    <option value="silent_focus">Silent Background Study</option>
-                  </select>
-                </div>
-              )}
-
-              {/* Focus Duration & Max Capacity */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Focus Interval (Minutes)
-                  </label>
-                  <select
-                    value={createTimerDuration}
-                    onChange={(e) => setCreateTimerDuration(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value={15}>15 Minutes</option>
-                    <option value={25}>25 Minutes (Standard)</option>
-                    <option value={45}>45 Minutes</option>
-                    <option value={50}>50 Minutes (Deep Focus)</option>
-                    <option value={60}>60 Minutes</option>
-                    <option value={90}>90 Minutes (Ultradian Cycle)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                    Max Capacity (Students)
-                  </label>
-                  <input
-                    type="number"
-                    min="2"
-                    max="50"
-                    value={createMaxParticipants}
-                    onChange={(e) => setCreateMaxParticipants(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* Custom Room Code */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold uppercase text-slate-500">
-                    Room Join Code
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleGenerateRandomCode}
-                    className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
-                  >
-                    🎲 Generate Random PIN
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  value={createCustomCode}
-                  onChange={(e) => setCreateCustomCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. FOCUS-77 or BIO-EXAM"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              {/* Study Goals / Description */}
-              <div>
-                <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
-                  Session Goal & Agenda (Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={createDescription}
-                  onChange={(e) => setCreateDescription(e.target.value)}
-                  placeholder="What topics or practice problems will you focus on during this session?"
-                  className="w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                />
-              </div>
-
-              {/* Submit / Cancel Actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition-all cursor-pointer active:scale-95"
-                >
-                  Launch Live Room
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* JOIN WITH CODE MODAL */}
+      <JoinCodeModal
+        isOpen={isJoinCodeModalOpen}
+        onClose={() => {
+          setIsJoinCodeModalOpen(false);
+          setCodeModalRoom(null);
+        }}
+        room={codeModalRoom}
+        onJoinSuccess={handleJoinByCode}
+      />
     </div>
   );
 };

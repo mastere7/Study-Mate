@@ -89,7 +89,9 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
   });
 
   // History panel & search states
-  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(true);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => {
+    return typeof window !== "undefined" ? window.innerWidth >= 1024 : false;
+  });
   const [historySearchQuery, setHistorySearchQuery] = useState<string>("");
 
   // Rename modal / inline states
@@ -134,6 +136,9 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
   // Handle switching active session
   const handleSelectSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setIsHistoryOpen(false);
+    }
   };
 
   // Create a brand new session
@@ -151,6 +156,9 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
     const updated = [newSession, ...sessions];
     setSessions(updated);
     setActiveSessionId(newSession.id);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setIsHistoryOpen(false);
+    }
   };
 
   // Rename session title
@@ -561,57 +569,103 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* HISTORY SIDEBAR */}
         {isHistoryOpen && (
-          <div className="w-72 sm:w-80 shrink-0 border-r border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col transition-all">
-            {/* Sidebar Search & New Chat Header */}
-            <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
-              <button
-                onClick={handleCreateNewSession}
-                className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                <span>New Tutor Session</span>
-              </button>
-
-              {/* History Search Bar */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-                <input
-                  type="text"
-                  value={historySearchQuery}
-                  onChange={(e) => setHistorySearchQuery(e.target.value)}
-                  placeholder="Search previous chats..."
-                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:border-indigo-500"
-                />
-                {historySearchQuery && (
+          <div className="fixed inset-0 z-40 lg:static lg:z-auto flex">
+            {/* Mobile backdrop */}
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs lg:hidden"
+              onClick={() => setIsHistoryOpen(false)}
+            />
+            <div className="relative w-72 sm:w-80 h-full shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 lg:bg-slate-50/50 lg:dark:bg-slate-900/50 flex flex-col transition-all z-10 shadow-2xl lg:shadow-none">
+              {/* Sidebar Search & New Chat Header */}
+              <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between lg:hidden mb-1">
+                  <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-indigo-500" />
+                    Chat History
+                  </span>
                   <button
-                    onClick={() => setHistorySearchQuery("")}
-                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                    onClick={() => setIsHistoryOpen(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-4 h-4" />
                   </button>
-                )}
-              </div>
-            </div>
-
-            {/* Sessions List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-3">
-              {filteredSessions.length === 0 ? (
-                <div className="p-6 text-center space-y-2">
-                  <MessageSquare className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" />
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                    No chat history matches your search.
-                  </p>
                 </div>
-              ) : (
-                <>
-                  {/* Pinned Sessions */}
-                  {pinnedSessions.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                        <Pin className="w-3 h-3 text-indigo-500" />
-                        <span>Pinned Chats</span>
+
+                <button
+                  onClick={handleCreateNewSession}
+                  className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>New Tutor Session</span>
+                </button>
+
+                {/* History Search Bar */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    placeholder="Search previous chats..."
+                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:border-indigo-500"
+                  />
+                  {historySearchQuery && (
+                    <button
+                      onClick={() => setHistorySearchQuery("")}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Sessions List */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-3">
+                {filteredSessions.length === 0 ? (
+                  <div className="p-6 text-center space-y-2">
+                    <MessageSquare className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      No chat history matches your search.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Pinned Sessions */}
+                    {pinnedSessions.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                          <Pin className="w-3 h-3 text-indigo-500" />
+                          <span>Pinned Chats</span>
+                        </div>
+                        {pinnedSessions.map((session) => (
+                          <SidebarSessionCard
+                            key={session.id}
+                            session={session}
+                            isActive={session.id === activeSessionId}
+                            subjects={subjects}
+                            editingSessionId={editingSessionId}
+                            editTitleInput={editTitleInput}
+                            setEditTitleInput={setEditTitleInput}
+                            onSelect={handleSelectSession}
+                            onStartRename={handleStartRename}
+                            onSaveRename={handleSaveRename}
+                            onCancelRename={() => setEditingSessionId(null)}
+                            onTogglePin={handleTogglePin}
+                            onDelete={handleDeleteSession}
+                          />
+                        ))}
                       </div>
-                      {pinnedSessions.map((session) => (
+                    )}
+
+                    {/* Recent Sessions */}
+                    <div className="space-y-1">
+                      {pinnedSessions.length > 0 && unpinnedSessions.length > 0 && (
+                        <div className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Recent Chats
+                        </div>
+                      )}
+                      {unpinnedSessions.map((session) => (
                         <SidebarSessionCard
                           key={session.id}
                           session={session}
@@ -629,35 +683,9 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
                         />
                       ))}
                     </div>
-                  )}
-
-                  {/* Recent Sessions */}
-                  <div className="space-y-1">
-                    {pinnedSessions.length > 0 && unpinnedSessions.length > 0 && (
-                      <div className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Recent Chats
-                      </div>
-                    )}
-                    {unpinnedSessions.map((session) => (
-                      <SidebarSessionCard
-                        key={session.id}
-                        session={session}
-                        isActive={session.id === activeSessionId}
-                        subjects={subjects}
-                        editingSessionId={editingSessionId}
-                        editTitleInput={editTitleInput}
-                        setEditTitleInput={setEditTitleInput}
-                        onSelect={handleSelectSession}
-                        onStartRename={handleStartRename}
-                        onSaveRename={handleSaveRename}
-                        onCancelRename={() => setEditingSessionId(null)}
-                        onTogglePin={handleTogglePin}
-                        onDelete={handleDeleteSession}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}

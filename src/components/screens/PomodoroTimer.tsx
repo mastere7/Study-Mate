@@ -108,45 +108,45 @@ export const PomodoroTimer: React.FC<PomodoroTimerProps> = ({
 
       <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 sm:p-12 shadow-xl space-y-8 text-center flex flex-col items-center justify-center">
         {/* Mode Switcher */}
-        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 max-w-full">
           <button
             onClick={() => handleSwitchMode("work")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               mode === "work"
                 ? "bg-rose-500 text-white shadow-sm"
-                : "text-slate-600 dark:text-slate-400"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
             }`}
           >
-            <Brain className="w-4 h-4" /> Focus (25m)
+            <Brain className="w-3.5 h-3.5" /> <span>Focus (25m)</span>
           </button>
           <button
             onClick={() => handleSwitchMode("shortBreak")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               mode === "shortBreak"
                 ? "bg-emerald-500 text-white shadow-sm"
-                : "text-slate-600 dark:text-slate-400"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
             }`}
           >
-            <Coffee className="w-4 h-4" /> Short Break (5m)
+            <Coffee className="w-3.5 h-3.5" /> <span>Short Break (5m)</span>
           </button>
           <button
             onClick={() => handleSwitchMode("longBreak")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               mode === "longBreak"
                 ? "bg-indigo-500 text-white shadow-sm"
-                : "text-slate-600 dark:text-slate-400"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
             }`}
           >
-            <Coffee className="w-4 h-4" /> Long Break (15m)
+            <Coffee className="w-3.5 h-3.5" /> <span>Long Break (15m)</span>
           </button>
         </div>
 
         {/* Large Timer Circle Visual */}
-        <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full border-8 border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center shadow-inner">
-          <span className="text-5xl sm:text-6xl font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight">
+        <div className="relative w-52 h-52 sm:w-72 sm:h-72 rounded-full border-8 border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center shadow-inner">
+          <span className="text-4xl sm:text-6xl font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight">
             {formattedTime}
           </span>
-          <span className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">
             {mode === "work" ? "Focus Interval" : "Rest Period"}
           </span>
         </div>
