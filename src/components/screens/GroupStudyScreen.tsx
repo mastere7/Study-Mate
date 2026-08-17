@@ -58,6 +58,7 @@ import {
   FlashcardDeck,
 } from "../../types";
 import { audioSynthService } from "../../services/audioSynth";
+import { fetchGroupSessionByIdOrCode, saveGroupSessionToFirestore } from "../../services/firebase";
 import { CreateRoomModal } from "./group/CreateRoomModal";
 import { JoinCodeModal } from "./group/JoinCodeModal";
 import { HostRequestsPanel } from "./group/HostRequestsPanel";
@@ -70,6 +71,8 @@ interface GroupStudyScreenProps {
   quizzes: Quiz[];
   decks: FlashcardDeck[];
   groupSessions: GroupStudySession[];
+  initialJoinCode?: string | null;
+  onClearInitialJoinCode?: () => void;
   onSaveGroupSessions: (sessions: GroupStudySession[]) => void;
   onSaveNotes: (notes: Note[]) => void;
 }
@@ -81,12 +84,15 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   quizzes,
   decks,
   groupSessions,
+  initialJoinCode,
+  onClearInitialJoinCode,
   onSaveGroupSessions,
   onSaveNotes,
 }) => {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState<string>("");
   const [joinCodeError, setJoinCodeError] = useState<string>("");
+  const [isSearchingCode, setIsSearchingCode] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterType, setFilterType] = useState<string>("all");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -263,73 +269,121 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     setActiveRoomTab("screenshare");
   };
 
+  // Auto-join effect when URL has a room code
+  useEffect(() => {
+    if (initialJoinCode) {
+      handleJoinByCode(initialJoinCode);
+      if (onClearInitialJoinCode) {
+        onClearInitialJoinCode();
+      }
+    }
+  }, [initialJoinCode]);
+
   // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeRoom?.chatMessages]);
 
-  // Handle Joining a Session by Code (Instant admission)
-  const handleJoinByCode = (codeToJoin?: string) => {
-    const code = (codeToJoin || joinCodeInput).trim().toUpperCase();
-    if (!code) {
-      setJoinCodeError("Please enter a 6-character room code (e.g. FOCUS-123 or BIO-404)");
+  // Handle Joining a Session by Code (Instant admission, local + remote Firestore lookup)
+  const handleJoinByCode = async (codeToJoin?: string) => {
+    const rawCode = (codeToJoin || joinCodeInput).trim();
+    if (!rawCode) {
+      setJoinCodeError("Please enter a room code (e.g. FOCUS-123 or BIO-404)");
       return;
     }
 
-    const room = groupSessions.find(
-      (r) => r.code.toUpperCase() === code || r.id.toUpperCase() === code
-    );
-    if (!room) {
-      setJoinCodeError(`No active room found with code "${code}". Please verify and try again.`);
-      return;
-    }
-
+    const code = rawCode.toUpperCase();
+    const normalizedCode = code.replace(/[^A-Z0-9]/g, "");
     setJoinCodeError("");
+    setIsSearchingCode(true);
 
-    const existing = room.currentParticipants.find((p) => p.id === user.id);
-    if (!existing) {
-      const newParticipant: GroupStudyParticipant = {
-        id: user.id || `u_${Date.now()}`,
-        name: user.name || "Student",
-        avatarUrl:
-          user.avatarUrl ||
-          `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-            user.name || "Student"
-          )}`,
-        role: "member",
-        status: "studying",
-        isMuted: false,
-        joinedAt: new Date().toISOString(),
-      };
+    try {
+      // 1. Search local state first
+      let targetRoom: GroupStudySession | undefined = groupSessions.find((r) => {
+        const rCode = (r.code || "").toUpperCase();
+        const rId = (r.id || "").toUpperCase();
+        return (
+          rCode === code ||
+          rId === code ||
+          (normalizedCode.length >= 4 &&
+            (rCode.replace(/[^A-Z0-9]/g, "") === normalizedCode ||
+              rId.replace(/[^A-Z0-9]/g, "") === normalizedCode))
+        );
+      });
 
-      const systemMsg: GroupStudyChatMessage = {
-        id: `sys_${Date.now()}`,
-        senderId: "system",
-        senderName: "StudyMate Bot",
-        text: `${user.name || "Student"} joined the study room with Room Code! 🔑`,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        type: "system",
-      };
+      // 2. If not found in local state, fetch directly from Firestore
+      if (!targetRoom) {
+        const remoteRoom = await fetchGroupSessionByIdOrCode(rawCode);
+        if (remoteRoom) {
+          targetRoom = remoteRoom;
+        }
+      }
 
-      // Remove any pending join request for this user since they used the code
-      const updatedPending = (room.pendingRequests || []).filter((r) => r.userId !== user.id);
+      if (!targetRoom) {
+        setJoinCodeError(
+          `No active room found with code "${rawCode}". Check the code or ask your friend if the room is still open.`
+        );
+        setIsSearchingCode(false);
+        return;
+      }
 
-      const updatedRoom: GroupStudySession = {
-        ...room,
-        currentParticipants: [...room.currentParticipants, newParticipant],
-        pendingRequests: updatedPending,
-        chatMessages: [...room.chatMessages, systemMsg],
-      };
+      const existing = (targetRoom.currentParticipants || []).find((p) => p.id === user.id);
+      let updatedRoom: GroupStudySession = { ...targetRoom };
 
-      const updatedList = groupSessions.map((r) => (r.id === room.id ? updatedRoom : r));
-      onSaveGroupSessions(updatedList);
+      if (!existing) {
+        const newParticipant: GroupStudyParticipant = {
+          id: user.id || `u_${Date.now()}`,
+          name: user.name || "Student",
+          avatarUrl:
+            user.avatarUrl ||
+            `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+              user.name || "Student"
+            )}`,
+          role: "member",
+          status: "studying",
+          isMuted: false,
+          joinedAt: new Date().toISOString(),
+        };
+
+        const systemMsg: GroupStudyChatMessage = {
+          id: `sys_${Date.now()}`,
+          senderId: "system",
+          senderName: "StudyMate Bot",
+          text: `${user.name || "Student"} joined the study room with Room Code! 🔑`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          type: "system",
+        };
+
+        // Remove any pending join request for this user since they used the code
+        const updatedPending = (targetRoom.pendingRequests || []).filter((r) => r.userId !== user.id);
+
+        updatedRoom = {
+          ...targetRoom,
+          currentParticipants: [...(targetRoom.currentParticipants || []), newParticipant],
+          pendingRequests: updatedPending,
+          chatMessages: [...(targetRoom.chatMessages || []), systemMsg],
+        };
+
+        const existsInLocal = groupSessions.some((r) => r.id === updatedRoom.id);
+        const updatedList = existsInLocal
+          ? groupSessions.map((r) => (r.id === updatedRoom.id ? updatedRoom : r))
+          : [updatedRoom, ...groupSessions];
+
+        onSaveGroupSessions(updatedList);
+        await saveGroupSessionToFirestore(updatedRoom);
+      }
+
+      setActiveRoomId(targetRoom.id);
+      setJoinCodeInput("");
+      setIsJoinCodeModalOpen(false);
+      setCodeModalRoom(null);
+      showToast(`Joined "${targetRoom.title}"! 🎉`);
+    } catch (err) {
+      console.warn("Could not join room by code:", err);
+      setJoinCodeError("Failed to connect to the study room. Please try again.");
+    } finally {
+      setIsSearchingCode(false);
     }
-
-    setActiveRoomId(room.id);
-    setJoinCodeInput("");
-    setIsJoinCodeModalOpen(false);
-    setCodeModalRoom(null);
-    showToast(`Joined "${room.title}"!`);
   };
 
   // Handle Request to Join (When room requires host approval)
@@ -458,6 +512,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   const handleRoomCreated = (newRoom: GroupStudySession) => {
     const updatedList = [newRoom, ...groupSessions];
     onSaveGroupSessions(updatedList);
+    saveGroupSessionToFirestore(newRoom);
     setActiveRoomId(newRoom.id);
     showToast(`Live room "${newRoom.title}" launched successfully!`);
   };
@@ -520,6 +575,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
     const updatedList = [newRoom, ...groupSessions];
     onSaveGroupSessions(updatedList);
+    saveGroupSessionToFirestore(newRoom);
     setActiveRoomId(newRoom.id);
     showToast(`Launched "${newRoom.title}"!`);
   };
@@ -570,6 +626,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
     const updatedList = groupSessions.map((r) => (r.id === activeRoom.id ? updatedRoom : r));
     onSaveGroupSessions(updatedList);
+    saveGroupSessionToFirestore(updatedRoom);
     setActiveRoomId(null);
   };
 
@@ -595,6 +652,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
     const updatedList = groupSessions.map((r) => (r.id === activeRoom.id ? updatedRoom : r));
     onSaveGroupSessions(updatedList);
+    saveGroupSessionToFirestore(updatedRoom);
     setChatInput("");
   };
 
@@ -629,6 +687,15 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     setCopiedCode(true);
     showToast(`Copied room code "${code}" to clipboard!`);
     setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  // Copy Direct Share Link
+  const handleCopyInviteLink = (room: GroupStudySession) => {
+    const url = `${window.location.origin}${window.location.pathname}?tab=group_study&room=${encodeURIComponent(
+      room.code
+    )}`;
+    navigator.clipboard.writeText(url);
+    showToast(`Copied invite link for "${room.title}"! 🔗`);
   };
 
   // Format Timer output
@@ -714,6 +781,15 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
                 {copiedCode ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
+
+            <button
+              onClick={() => handleCopyInviteLink(activeRoom)}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl font-bold text-xs bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 hover:bg-indigo-500/30 transition-all cursor-pointer"
+              title="Copy shareable invite link"
+            >
+              <Sparkle className="w-4 h-4 text-amber-300" />
+              <span>Share Link</span>
+            </button>
 
             <button
               onClick={handleToggleScreenShare}
@@ -1463,25 +1539,42 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 flex items-center gap-2 w-full sm:w-auto">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleJoinByCode();
+            }}
+            className="flex-1 flex items-center gap-2 w-full sm:w-auto"
+          >
             <input
               type="text"
               value={joinCodeInput}
+              disabled={isSearchingCode}
               onChange={(e) => {
                 setJoinCodeInput(e.target.value);
                 setJoinCodeError("");
               }}
               placeholder="e.g. FOCUS-123 or BIO-890"
-              className="flex-1 px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-xs sm:text-sm font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-200 dark:border-slate-700"
+              className="flex-1 px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-xs sm:text-sm font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-200 dark:border-slate-700 disabled:opacity-50"
             />
             <button
-              onClick={() => handleJoinByCode()}
-              className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-500/20 transition-all shrink-0 cursor-pointer active:scale-95 flex items-center gap-1.5"
+              type="submit"
+              disabled={isSearchingCode || !joinCodeInput.trim()}
+              className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-500/20 transition-all shrink-0 cursor-pointer active:scale-95 flex items-center gap-1.5"
             >
-              <KeyRound className="w-4 h-4" />
-              <span>Join Session</span>
+              {isSearchingCode ? (
+                <>
+                  <Clock className="w-4 h-4 animate-spin" />
+                  <span>Connecting...</span>
+                </>
+              ) : (
+                <>
+                  <KeyRound className="w-4 h-4" />
+                  <span>Join Session</span>
+                </>
+              )}
             </button>
-          </div>
+          </form>
         </div>
         {joinCodeError && (
           <p className="text-xs text-rose-500 font-semibold mt-2 pl-2 flex items-center gap-1">

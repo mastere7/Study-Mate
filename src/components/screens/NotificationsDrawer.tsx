@@ -56,8 +56,8 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     const res = await pushNotificationService.requestPermission();
     setPermissionState(res);
     if (res === "granted") {
-      pushNotificationService.sendNotification("🎉 Push Notifications Activated!", {
-        body: "You will now receive automatic browser push reminders for upcoming assignment deadlines and study sessions.",
+      await pushNotificationService.sendNotification("🎉 Push Notifications Activated!", {
+        body: "You will now receive automatic browser push reminders for upcoming assignment deadlines and study sessions, even when StudyMate is in the background.",
         playSound: user?.notificationSound ?? true,
       });
       setTestSentMessage("Push notifications successfully enabled! Test alert sent.");
@@ -65,9 +65,9 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     }
   };
 
-  const handleSendTestPush = () => {
-    const success = pushNotificationService.sendNotification("🔔 StudyMate Test Push Notification", {
-      body: "Browser push notifications are active! Deadline alerts and study schedule reminders will appear here.",
+  const handleSendTestPush = async () => {
+    const success = await pushNotificationService.sendNotification("🔔 StudyMate Test Push Notification", {
+      body: "Browser push notifications are active! Deadline alerts and study schedule reminders will appear even when not focused on the tab.",
       playSound: user?.notificationSound ?? true,
     });
 
@@ -88,11 +88,11 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     }
   };
 
-  const handleTriggerAssignmentReminder = (assignment: Assignment) => {
+  const handleTriggerAssignmentReminder = async (assignment: Assignment) => {
     const title = `⚠️ Deadline Alert: ${assignment.title}`;
     const body = `Due Date: ${assignment.dueDate} | Priority: ${assignment.priority}. Keep up the great work!`;
 
-    pushNotificationService.sendNotification(title, {
+    await pushNotificationService.sendNotification(title, {
       body,
       playSound: user?.notificationSound ?? true,
     });
@@ -113,11 +113,11 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     setTimeout(() => setTestSentMessage(null), 4000);
   };
 
-  const handleTriggerScheduleReminder = (session: StudySchedule) => {
+  const handleTriggerScheduleReminder = async (session: StudySchedule) => {
     const title = `📚 Scheduled Study Session: ${session.title}`;
     const body = `Scheduled for ${session.date} (${session.startTime} - ${session.endTime}). Time to focus!`;
 
-    pushNotificationService.sendNotification(title, {
+    await pushNotificationService.sendNotification(title, {
       body,
       playSound: user?.notificationSound ?? true,
     });
@@ -230,9 +230,9 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                 </span>
               </div>
               <p className="text-xs text-indigo-200/80 mt-0.5">
-                {permissionState === "granted" && "Native desktop & mobile alerts are enabled for deadlines and study sessions."}
-                {permissionState === "default" && "Grant permission to receive alerts even when you are working on other tabs."}
-                {permissionState === "denied" && "Browser notifications are currently blocked for this site. Unblock in browser settings."}
+                {permissionState === "granted" && "Native alerts active! You will receive reminders for deadlines and study plans even when not logged in or when StudyMate is in the background."}
+                {permissionState === "default" && "Enable push alerts to receive deadline and study reminders anytime, even when logged out or working in another tab."}
+                {permissionState === "denied" && "Browser notifications are currently blocked for this site. Unblock in browser site settings to receive reminders."}
                 {permissionState === "unsupported" && "Your current browser does not support the Web Notification API."}
               </p>
             </div>

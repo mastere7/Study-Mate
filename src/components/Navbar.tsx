@@ -565,8 +565,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="nav-user-profile-btn"
                 onClick={handleOpenAuth}
-                className="flex items-center gap-1.5 sm:gap-2 p-1 sm:pl-1.5 sm:pr-3 sm:py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all cursor-pointer shadow-xs select-none shrink-0 group"
-                title={`Logged in as ${user?.name || user?.email || firstName} (Click to change avatar & profile)`}
+                className="flex items-center gap-2 pl-1.5 pr-2.5 sm:pr-3 py-1 rounded-full bg-indigo-50/90 dark:bg-indigo-950/70 border border-indigo-200/90 dark:border-indigo-900/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 hover:border-indigo-300 dark:hover:border-indigo-700 transition-all cursor-pointer shadow-xs select-none shrink-0 group active:scale-95"
+                title={`Logged in as ${user?.name || user?.email || firstName} (Click to open profile & settings)`}
               >
                 <div className="relative shrink-0">
                   <img
@@ -579,11 +579,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   />
                   <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white dark:border-slate-900 rounded-full" />
                 </div>
-                <div className="hidden xs:flex flex-col text-left pr-0.5">
-                  <span className="font-extrabold text-xs text-indigo-950 dark:text-indigo-200 truncate max-w-[70px] sm:max-w-[110px]">
+                <div className="flex flex-col text-left">
+                  <span className="font-extrabold text-xs sm:text-sm text-indigo-950 dark:text-indigo-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors leading-tight truncate max-w-[85px] sm:max-w-[130px]">
                     {firstName}
                   </span>
-                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold -mt-0.5 hidden sm:inline">
+                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold leading-tight truncate max-w-[85px] sm:max-w-[130px] hidden sm:inline">
                     {user?.gradeLevel || "Student"}
                   </span>
                 </div>

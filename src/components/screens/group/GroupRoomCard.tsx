@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Users, Lock, Globe, KeyRound, Crown, Trash2, Copy, Check, Clock, UserPlus, ArrowRight, Sparkles } from "lucide-react";
+import { Users, Lock, Globe, KeyRound, Crown, Trash2, Copy, Check, Clock, UserPlus, ArrowRight, Sparkles, Share2 } from "lucide-react";
 import { GroupStudySession, UserProfile } from "../../../types";
 
 interface GroupRoomCardProps {
@@ -20,6 +20,7 @@ export const GroupRoomCard: React.FC<GroupRoomCardProps> = ({
   onDeleteRoom,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
 
   const isFull = room.currentParticipants.length >= room.maxParticipants;
   const isMember = room.currentParticipants.some((p) => p.id === user.id);
@@ -34,6 +35,16 @@ export const GroupRoomCard: React.FC<GroupRoomCardProps> = ({
     navigator.clipboard.writeText(room.code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShareLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}${window.location.pathname}?tab=group_study&room=${encodeURIComponent(
+      room.code
+    )}`;
+    navigator.clipboard.writeText(url);
+    setShared(true);
+    setTimeout(() => setShared(false), 2000);
   };
 
   return (
@@ -140,18 +151,27 @@ export const GroupRoomCard: React.FC<GroupRoomCardProps> = ({
       {/* Footer Actions */}
       <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          {/* Room Code Badge */}
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
-            <span className="text-[10px] text-slate-500 font-medium">Code:</span>
-            <span className="text-[11px] font-mono font-extrabold text-indigo-600 dark:text-indigo-400">
-              {room.code}
-            </span>
+          {/* Room Code Badge & Share */}
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+              <span className="text-[10px] text-slate-500 font-medium">Code:</span>
+              <span className="text-[11px] font-mono font-extrabold text-indigo-600 dark:text-indigo-400">
+                {room.code}
+              </span>
+              <button
+                onClick={handleCopyCode}
+                className="p-0.5 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer ml-1"
+                title="Copy code"
+              >
+                {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
+              </button>
+            </div>
             <button
-              onClick={handleCopyCode}
-              className="p-0.5 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer ml-1"
-              title="Copy code"
+              onClick={handleShareLink}
+              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-300 transition-all cursor-pointer"
+              title="Copy share link"
             >
-              {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
+              {shared ? <Check className="w-3 h-3 text-emerald-500" /> : <Share2 className="w-3 h-3" />}
             </button>
           </div>
 

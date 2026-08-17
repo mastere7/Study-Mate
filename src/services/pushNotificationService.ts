@@ -56,19 +56,20 @@ export class PushNotificationService {
   }
 
   /**
-   * Fire a native browser push notification
+   * Fire a native browser push notification (via ServiceWorker or native Notification API)
    */
-  sendNotification(
+  async sendNotification(
     title: string,
     options: {
       body?: string;
       icon?: string;
       tag?: string;
       playSound?: boolean;
+      data?: any;
       onClick?: () => void;
     } = {}
-  ): boolean {
-    const { body, icon = "/favicon.ico", tag, playSound = true, onClick } = options;
+  ): Promise<boolean> {
+    const { body, icon = "/favicon.svg", tag, playSound = true, data = { url: "/?tab=notifications" }, onClick } = options;
 
     // Play chime sound if enabled
     if (playSound) {
@@ -82,6 +83,29 @@ export class PushNotificationService {
 
     if (Notification.permission === "granted") {
       try {
+        // 1. Try Service Worker Notification (works when window is minimized or in background)
+        if ("serviceWorker" in navigator) {
+          try {
+            const reg = await navigator.serviceWorker.ready;
+            if (reg && reg.showNotification) {
+              await reg.showNotification(title, {
+                body,
+                icon,
+                badge: icon,
+                tag,
+                data,
+                // @ts-ignore
+                vibrate: [200, 100, 200],
+                requireInteraction: false,
+              });
+              return true;
+            }
+          } catch (swErr) {
+            console.warn("ServiceWorker showNotification fallback:", swErr);
+          }
+        }
+
+        // 2. Fallback to Window Notification API
         const notif = new Notification(title, {
           body,
           icon,
@@ -104,6 +128,57 @@ export class PushNotificationService {
     } else {
       console.info("Native push notification blocked (Permission:", Notification.permission, ")");
       return false;
+    }
+  }
+
+  /**
+   * Sync active assignments & schedules to Service Worker for background reminder evaluation
+   */
+  syncRemindersToServiceWorker(assignments: Assignment[], schedules: StudySchedule[]) {
+    try {
+      const activeAssignments = assignments.filter((a) => a.status !== "Completed");
+      const activeSchedules = schedules.filter((s) => !s.isCompleted);
+      const sentTags = Array.from(getSentTags());
+
+      // Save to background storage for persistence across tabs/restarts
+      localStorage.setItem("studymate_bg_reminders", JSON.stringify({
+        assignments: activeAssignments,
+        schedules: activeSchedules,
+        updatedAt: Date.now(),
+      }));
+
+      // Post message to Service Worker
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        navigator.serviceWorker.ready.then((reg) => {
+          if (reg.active) {
+            reg.active.postMessage({
+              type: "SYNC_REMINDERS",
+              assignments: activeAssignments,
+              schedules: activeSchedules,
+              sentTags,
+            });
+          }
+
+          // Register Periodic Background Sync if browser supports it (e.g. Chrome / Android)
+          // @ts-ignore
+          if ("periodicSync" in reg && reg.periodicSync) {
+            try {
+              // @ts-ignore
+              reg.periodicSync.register("studymate-deadline-check", {
+                minInterval: 15 * 60 * 1000, // 15 minutes minimum interval
+              }).catch((e: any) => {
+                // Periodic sync might require PWA installation, fail silently
+              });
+            } catch (err) {
+              // Ignore unsupported periodic sync errors
+            }
+          }
+        }).catch((err) => {
+          console.warn("ServiceWorker reminder sync non-blocking error:", err);
+        });
+      }
+    } catch (e) {
+      console.warn("Error syncing reminders to service worker:", e);
     }
   }
 

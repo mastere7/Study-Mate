@@ -23,6 +23,7 @@ import {
   writeBatch,
   onSnapshot,
   query,
+  where,
 } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 import {
@@ -395,11 +396,78 @@ export const subscribeToGroupSessions = (onUpdate: (sessions: GroupStudySession[
   }
 };
 
+export const fetchGroupSessionByIdOrCode = async (codeOrId: string): Promise<GroupStudySession | null> => {
+  if (!codeOrId) return null;
+  const rawClean = codeOrId.trim();
+  const upperClean = rawClean.toUpperCase();
+  const normalizedClean = upperClean.replace(/[^A-Z0-9]/g, "");
+
+  try {
+    // 1. Try direct doc ID lookup
+    const docSnap = await getDoc(doc(db, "groupSessions", rawClean));
+    if (docSnap.exists()) {
+      return { ...docSnap.data(), id: docSnap.id } as GroupStudySession;
+    }
+
+    // 2. Try doc ID lowercase / raw
+    if (rawClean !== upperClean) {
+      const docSnapUpper = await getDoc(doc(db, "groupSessions", upperClean));
+      if (docSnapUpper.exists()) {
+        return { ...docSnapUpper.data(), id: docSnapUpper.id } as GroupStudySession;
+      }
+    }
+
+    // 3. Query by exact code
+    const q1 = query(collection(db, "groupSessions"), where("code", "==", upperClean));
+    const snap1 = await getDocs(q1);
+    if (!snap1.empty) {
+      const match = snap1.docs[0];
+      return { ...match.data(), id: match.id } as GroupStudySession;
+    }
+
+    // 4. Query by raw code
+    if (rawClean !== upperClean) {
+      const q2 = query(collection(db, "groupSessions"), where("code", "==", rawClean));
+      const snap2 = await getDocs(q2);
+      if (!snap2.empty) {
+        const match = snap2.docs[0];
+        return { ...match.data(), id: match.id } as GroupStudySession;
+      }
+    }
+
+    // 5. Fallback: Search all active rooms for flexible matching (e.g. FOCUS123 vs FOCUS-123)
+    const snapAll = await getDocs(collection(db, "groupSessions"));
+    for (const d of snapAll.docs) {
+      const data = d.data() as GroupStudySession;
+      const roomCode = (data.code || "").toUpperCase();
+      const roomId = (data.id || "").toUpperCase();
+      const normRoomCode = roomCode.replace(/[^A-Z0-9]/g, "");
+      const normRoomId = roomId.replace(/[^A-Z0-9]/g, "");
+
+      if (
+        roomCode === upperClean ||
+        roomId === upperClean ||
+        (normalizedClean.length >= 4 && (normRoomCode === normalizedClean || normRoomId === normalizedClean))
+      ) {
+        return { ...data, id: d.id };
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.warn("Could not query Firestore for room code:", err);
+    return null;
+  }
+};
+
 export const saveGroupSessionToFirestore = async (session: GroupStudySession) => {
   if (!session || !session.id) return;
-  const path = `groupSessions/${session.id}`;
   try {
-    await setDoc(doc(db, "groupSessions", session.id), session, { merge: true });
+    // Sanitize object to remove undefined values before writing to Firestore
+    const cleanSession = JSON.parse(
+      JSON.stringify(session, (key, value) => (value === undefined ? null : value))
+    );
+    await setDoc(doc(db, "groupSessions", session.id), cleanSession, { merge: true });
   } catch (err) {
     console.warn(`Could not save groupSession to Firestore:`, err);
   }

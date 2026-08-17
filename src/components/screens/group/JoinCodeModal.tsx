@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { KeyRound, X, AlertCircle, ArrowRight, ShieldCheck } from "lucide-react";
+import { KeyRound, X, AlertCircle, ArrowRight, ShieldCheck, Clock } from "lucide-react";
 import { GroupStudySession } from "../../../types";
 
 interface JoinCodeModalProps {
   isOpen: boolean;
   onClose: () => void;
   room?: GroupStudySession | null;
-  onJoinSuccess: (code: string) => void;
+  onJoinSuccess: (code: string) => void | Promise<void>;
 }
 
 export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
@@ -15,12 +15,13 @@ export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
   room,
   onJoinSuccess,
 }) => {
-  const [inputCode, setInputCode] = useState("");
+  const [inputCode, setInputCode] = useState(room ? room.code : "");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const clean = inputCode.trim().toUpperCase();
     if (!clean) {
@@ -34,8 +35,15 @@ export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
     }
 
     setError("");
-    onJoinSuccess(clean);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await onJoinSuccess(clean);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || "Failed to locate room with this code. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -51,13 +59,14 @@ export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
                 Join with Room Code
               </h3>
               <p className="text-[11px] text-slate-400">
-                {room ? `Bypass approval for "${room.title}"` : "Enter 6-character room code"}
+                {room ? `Instant access for "${room.title}"` : "Enter 6-character room code"}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            disabled={isSubmitting}
+            className="p-1.5 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -72,13 +81,14 @@ export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
               type="text"
               required
               autoFocus
+              disabled={isSubmitting}
               value={inputCode}
               onChange={(e) => {
                 setInputCode(e.target.value);
                 setError("");
               }}
               placeholder={room ? `e.g. ${room.code}` : "e.g. FOCUS-123"}
-              className="w-full px-4 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-sm font-mono uppercase font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-200 dark:border-slate-700"
+              className="w-full px-4 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-sm font-mono uppercase font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-200 dark:border-slate-700 disabled:opacity-50"
             />
             {error && (
               <p className="text-xs text-rose-500 font-semibold mt-2 flex items-center gap-1">
@@ -90,23 +100,34 @@ export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
 
           <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>Entering a valid room code grants instant access without waiting for host review!</span>
+            <span>Entering a valid room code connects directly to the live study room!</span>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              disabled={isSubmitting}
+              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              disabled={isSubmitting || !inputCode.trim()}
+              className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
-              <span>Enter Room</span>
-              <ArrowRight className="w-4 h-4" />
+              {isSubmitting ? (
+                <>
+                  <Clock className="w-4 h-4 animate-spin" />
+                  <span>Connecting...</span>
+                </>
+              ) : (
+                <>
+                  <span>Enter Room</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </div>
         </form>

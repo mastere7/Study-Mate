@@ -180,12 +180,203 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// 4. Message Event: Handle cache controls and manual caching triggers
+// 4. Notification Click & Close Events (Background & Desktop Native Alerts)
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // If a StudyMate window is already open, focus it and navigate
+      for (const client of windowClients) {
+        if (client.url && client.url.startsWith(self.location.origin) && 'focus' in client) {
+          if (targetUrl !== '/' && client.navigate) {
+            client.navigate(targetUrl);
+          }
+          return client.focus();
+        }
+      }
+      // If no window is currently open, open a new window
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+
+self.addEventListener('notificationclose', (event) => {
+  console.log('[SW] Notification dismissed:', event.notification.tag);
+});
+
+// 5. Background Reminders State & Checking Engine
+let cachedReminders = {
+  assignments: [],
+  schedules: [],
+  sentTags: [],
+};
+
+async function checkScheduledReminders() {
+  if (!cachedReminders.assignments.length && !cachedReminders.schedules.length) {
+    return;
+  }
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  const tomorrow = new Date(now.getTime() + 86400000);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const sentTagsSet = new Set(cachedReminders.sentTags || []);
+
+  // 1. Check Assignments
+  for (const assignment of cachedReminders.assignments) {
+    if (assignment.status === 'Completed') continue;
+
+    const tagDueToday = `assign_today_${assignment.id}_${todayStr}`;
+    const tagDueTomorrow = `assign_tomorrow_${assignment.id}_${todayStr}`;
+    const tagOverdue = `assign_overdue_${assignment.id}_${todayStr}`;
+
+    if (assignment.dueDate === todayStr && !sentTagsSet.has(tagDueToday)) {
+      sentTagsSet.add(tagDueToday);
+      cachedReminders.sentTags.push(tagDueToday);
+
+      await self.registration.showNotification(`⚠️ Due Today: ${assignment.title}`, {
+        body: `Priority: ${assignment.priority || 'Medium'} | Due date is today! Don't forget to submit your work.`,
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        tag: tagDueToday,
+        vibrate: [200, 100, 200],
+        data: { url: '/?tab=study_planner', assignmentId: assignment.id },
+      });
+    } else if (assignment.dueDate === tomorrowStr && !sentTagsSet.has(tagDueTomorrow)) {
+      sentTagsSet.add(tagDueTomorrow);
+      cachedReminders.sentTags.push(tagDueTomorrow);
+
+      await self.registration.showNotification(`⏰ Due Tomorrow: ${assignment.title}`, {
+        body: `Upcoming assignment "${assignment.title}" is due tomorrow (${assignment.dueDate}).`,
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        tag: tagDueTomorrow,
+        vibrate: [150, 100, 150],
+        data: { url: '/?tab=study_planner', assignmentId: assignment.id },
+      });
+    } else if (assignment.dueDate < todayStr && !sentTagsSet.has(tagOverdue)) {
+      sentTagsSet.add(tagOverdue);
+      cachedReminders.sentTags.push(tagOverdue);
+
+      await self.registration.showNotification(`🚨 Overdue Assignment: ${assignment.title}`, {
+        body: `This assignment was due on ${assignment.dueDate}. Check your tasks and submit when ready!`,
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        tag: tagOverdue,
+        vibrate: [250, 150, 250],
+        data: { url: '/?tab=study_planner', assignmentId: assignment.id },
+      });
+    }
+  }
+
+  // 2. Check Study Sessions
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  for (const session of cachedReminders.schedules) {
+    if (session.isCompleted || session.date !== todayStr) continue;
+
+    if (!session.startTime) continue;
+    const [startHour, startMin] = session.startTime.split(':').map(Number);
+    const sessionStartTotalMins = startHour * 60 + startMin;
+    const minutesUntilStart = sessionStartTotalMins - currentMinutes;
+
+    const tagSessionStart = `session_start_${session.id}_${todayStr}`;
+    const tagSessionUpcoming = `session_15m_${session.id}_${todayStr}`;
+
+    if (minutesUntilStart > 0 && minutesUntilStart <= 15 && !sentTagsSet.has(tagSessionUpcoming)) {
+      sentTagsSet.add(tagSessionUpcoming);
+      cachedReminders.sentTags.push(tagSessionUpcoming);
+
+      await self.registration.showNotification(`📚 Study Session Starting in ${minutesUntilStart}m!`, {
+        body: `"${session.title}" starts at ${session.startTime}. Get your notes ready to focus.`,
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        tag: tagSessionUpcoming,
+        vibrate: [200, 100, 200],
+        data: { url: '/?tab=study_planner', sessionId: session.id },
+      });
+    } else if (minutesUntilStart <= 0 && minutesUntilStart >= -10 && !sentTagsSet.has(tagSessionStart)) {
+      sentTagsSet.add(tagSessionStart);
+      cachedReminders.sentTags.push(tagSessionStart);
+
+      await self.registration.showNotification(`🔔 Study Session Starting Now!`, {
+        body: `"${session.title}" scheduled for ${session.startTime} - ${session.endTime} is starting now!`,
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        tag: tagSessionStart,
+        vibrate: [300, 150, 300],
+        data: { url: '/?tab=study_planner', sessionId: session.id },
+      });
+    }
+  }
+}
+
+// Check every 60 seconds while Service Worker is active
+setInterval(() => {
+  checkScheduledReminders().catch((err) => console.warn('[SW] Reminder loop check error:', err));
+}, 60000);
+
+// 6. Periodic Background Sync Event
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'studymate-deadline-check' || event.tag === 'studymate-reminders') {
+    console.log('[SW] Periodic background reminder sync triggered:', event.tag);
+    event.waitUntil(checkScheduledReminders());
+  }
+});
+
+// 7. Web Push Event (Native Push Server / External Push)
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: 'StudyMate Notification', body: event.data ? event.data.text() : 'You have a study update!' };
+  }
+
+  const title = data.title || '🔔 StudyMate Alert';
+  const options = {
+    body: data.body || 'You have an upcoming study reminder or assignment deadline.',
+    icon: data.icon || '/favicon.svg',
+    badge: data.badge || '/favicon.svg',
+    tag: data.tag || `push_${Date.now()}`,
+    vibrate: [200, 100, 200],
+    data: data.data || { url: '/?tab=notifications' },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// 8. Message Event: Handle cache controls, reminder sync, and manual triggers
 self.addEventListener('message', (event) => {
   if (!event.data) return;
 
   if (event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+
+  if (event.data.type === 'SYNC_REMINDERS') {
+    cachedReminders = {
+      assignments: event.data.assignments || [],
+      schedules: event.data.schedules || [],
+      sentTags: event.data.sentTags || [],
+    };
+    checkScheduledReminders().catch((err) => console.warn('[SW] Reminder sync check error:', err));
+  }
+
+  if (event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, options } = event.data;
+    event.waitUntil(
+      self.registration.showNotification(title, {
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        vibrate: [200, 100, 200],
+        ...options,
+      })
+    );
   }
 
   if (event.data.type === 'CLEAR_CACHE') {
@@ -206,3 +397,4 @@ self.addEventListener('message', (event) => {
     }
   }
 });
+

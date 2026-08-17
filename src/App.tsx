@@ -53,6 +53,7 @@ import {
   auth,
   onAuthStateChanged,
   fetchUserData,
+  logoutUser,
   syncUserDoc,
   syncFullCollection,
   syncItemToFirestore,
@@ -80,7 +81,27 @@ const tabNames: Record<string, string> = {
 };
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<string>("dashboard");
+  const [initialRoomCode, setInitialRoomCode] = useState<string | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("room") || params.get("code") || params.get("join") || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [currentTab, setCurrentTab] = useState<string>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("room") || params.get("code") || params.get("join") || params.get("tab") === "group_study") {
+        return "group_study";
+      }
+      if (params.get("tab") && tabNames[params.get("tab")!]) {
+        return params.get("tab")!;
+      }
+    } catch {}
+    return "dashboard";
+  });
   const [tabHistory, setTabHistory] = useState<string[]>([]);
   const [themeMode, setThemeMode] = useState<"light" | "dark" | "system">(
     () => {
@@ -196,42 +217,41 @@ export default function App() {
             storageService.setAuthStatus("returning_user");
           }
 
-          if (data.subjects !== undefined) {
-            setSubjects(data.subjects);
-            storageService.saveSubjects(data.subjects);
-          }
-          if (data.notes && data.notes.length > 0) {
-            setNotes(data.notes);
-            storageService.saveNotes(data.notes);
-          }
-          if (data.documents && data.documents.length > 0) {
-            setDocuments(data.documents);
-            storageService.saveDocuments(data.documents);
-          }
-          if (data.assignments && data.assignments.length > 0) {
-            setAssignments(data.assignments);
-            storageService.saveAssignments(data.assignments);
-          }
-          if (data.schedules && data.schedules.length > 0) {
-            setSchedules(data.schedules);
-            storageService.saveSchedules(data.schedules);
-          }
-          if (data.quizzes && data.quizzes.length > 0) {
-            setQuizzes(data.quizzes);
-            storageService.saveQuizzes(data.quizzes);
-          }
-          if (data.decks && data.decks.length > 0) {
-            setDecks(data.decks);
-            storageService.saveDecks(data.decks);
-          }
-          if (data.sessions && data.sessions.length > 0) {
-            setSessions(data.sessions);
-            storageService.saveSessions(data.sessions);
-          }
-          if (data.notifications && data.notifications.length > 0) {
-            setNotifications(data.notifications);
-            storageService.saveNotifications(data.notifications);
-          }
+          const userSubjects = data.subjects || [];
+          setSubjects(userSubjects);
+          storageService.saveSubjects(userSubjects);
+
+          const userNotes = data.notes || [];
+          setNotes(userNotes);
+          storageService.saveNotes(userNotes);
+
+          const userDocs = data.documents || [];
+          setDocuments(userDocs);
+          storageService.saveDocuments(userDocs);
+
+          const userAssignments = data.assignments || [];
+          setAssignments(userAssignments);
+          storageService.saveAssignments(userAssignments);
+
+          const userSchedules = data.schedules || [];
+          setSchedules(userSchedules);
+          storageService.saveSchedules(userSchedules);
+
+          const userQuizzes = data.quizzes || [];
+          setQuizzes(userQuizzes);
+          storageService.saveQuizzes(userQuizzes);
+
+          const userDecks = data.decks || [];
+          setDecks(userDecks);
+          storageService.saveDecks(userDecks);
+
+          const userSessions = data.sessions || [];
+          setSessions(userSessions);
+          storageService.saveSessions(userSessions);
+
+          const userNotifications = data.notifications || [];
+          setNotifications(userNotifications);
+          storageService.saveNotifications(userNotifications);
         }
       } else {
         setIsFirebaseAuthenticated(false);
@@ -293,6 +313,9 @@ export default function App() {
 
   // Automated Background Push Notification Engine for Assignments and Schedules
   useEffect(() => {
+    // 1. Sync reminders to Service Worker so reminders trigger even when tab is in background/minimized
+    pushNotificationService.syncRemindersToServiceWorker(assignments, schedules);
+
     const triggerCheck = () => {
       pushNotificationService.checkAndTriggerReminders(
         assignments,
@@ -314,7 +337,19 @@ export default function App() {
 
     triggerCheck();
     const interval = setInterval(triggerCheck, 30000); // Check every 30 seconds
-    return () => clearInterval(interval);
+
+    // Also check immediately when user switches back to the tab or device unlocks
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        triggerCheck();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [assignments, schedules, user]);
 
   const toggleDarkMode = () => {
@@ -596,6 +631,8 @@ export default function App() {
               quizzes={quizzes}
               decks={decks}
               groupSessions={groupSessions}
+              initialJoinCode={initialRoomCode}
+              onClearInitialJoinCode={() => setInitialRoomCode(null)}
               onSaveGroupSessions={handleSaveGroupSessions}
               onSaveNotes={handleSaveNotes}
             />
@@ -633,9 +670,11 @@ export default function App() {
 
           {currentTab === "flashcards" && (
             <FlashcardsScreen
+              user={user}
               decks={decks}
               subjects={subjects}
               onSaveDecks={handleSaveDecks}
+              onUpdateUser={handleSaveUser}
               initialTopic={flashcardPreTopic}
               initialText={flashcardPreText}
             />
@@ -690,17 +729,28 @@ export default function App() {
         onClose={() => setIsAuthOpen(false)}
         onUpdateUser={handleSaveUser}
         isFirebaseAuthenticated={isFirebaseAuthenticated}
-        onLogout={() => {
+        onLogout={async () => {
+          await logoutUser();
           handleSaveUser(DEFAULT_USER);
           setSubjects(DEFAULT_SUBJECTS);
+          storageService.saveSubjects(DEFAULT_SUBJECTS);
           setNotes(DEFAULT_NOTES);
+          storageService.saveNotes(DEFAULT_NOTES);
           setDocuments(DEFAULT_DOCUMENTS);
+          storageService.saveDocuments(DEFAULT_DOCUMENTS);
           setQuizzes(DEFAULT_QUIZZES);
+          storageService.saveQuizzes(DEFAULT_QUIZZES);
           setDecks(DEFAULT_DECKS);
+          storageService.saveDecks(DEFAULT_DECKS);
           setAssignments(DEFAULT_ASSIGNMENTS);
+          storageService.saveAssignments(DEFAULT_ASSIGNMENTS);
           setSchedules(DEFAULT_SCHEDULES);
+          storageService.saveSchedules(DEFAULT_SCHEDULES);
           setSessions(DEFAULT_SESSIONS);
+          storageService.saveSessions(DEFAULT_SESSIONS);
           setNotifications(DEFAULT_NOTIFICATIONS);
+          storageService.saveNotifications(DEFAULT_NOTIFICATIONS);
+          storageService.saveActivities([]);
           setIsAuthOpen(false);
         }}
       />

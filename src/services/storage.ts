@@ -74,18 +74,8 @@ export const DEFAULT_TOPIC_NODES: TopicNode[] = [];
 export const DEFAULT_TOPIC_EDGES: TopicEdge[] = [];
 export const DEFAULT_CHAT_SESSIONS: AIChatSession[] = [];
 
-// Default Notifications
-export const DEFAULT_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: "notif_1",
-    userId: "u_guest",
-    title: "Welcome to StudyMate!",
-    message: "Upload your course materials to generate custom flashcard decks and study notes.",
-    date: new Date().toISOString(),
-    type: "daily_revision",
-    isRead: false,
-  },
-];
+// Default Notifications (starts empty for user to receive their own alerts)
+export const DEFAULT_NOTIFICATIONS: AppNotification[] = [];
 
 // Storage Helper Engine
 export const storageService = {
@@ -191,7 +181,19 @@ export const storageService = {
 
   getAssignments: (): Assignment[] => {
     const data = localStorage.getItem(KEYS.ASSIGNMENTS);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    try {
+      const parsed: Assignment[] = JSON.parse(data);
+      if (!Array.isArray(parsed)) return [];
+      const legacyIds = new Set(["asg_1", "asg_2", "asg_3", "asg_4", "asg_sample", "a_sample_1", "a_sample_2"]);
+      const filtered = parsed.filter((a) => a && a.id && !legacyIds.has(a.id));
+      if (filtered.length !== parsed.length) {
+        localStorage.setItem(KEYS.ASSIGNMENTS, JSON.stringify(filtered));
+      }
+      return filtered;
+    } catch {
+      return [];
+    }
   },
   saveAssignments: (assignments: Assignment[]) => {
     localStorage.setItem(KEYS.ASSIGNMENTS, JSON.stringify(assignments));
@@ -230,7 +232,19 @@ export const storageService = {
 
   getNotifications: (): AppNotification[] => {
     const data = localStorage.getItem(KEYS.NOTIFICATIONS);
-    return data ? JSON.parse(data) : DEFAULT_NOTIFICATIONS;
+    if (!data) return [];
+    try {
+      const parsed: AppNotification[] = JSON.parse(data);
+      if (!Array.isArray(parsed)) return [];
+      const legacyIds = new Set(["notif_1", "notif_sample", "notif_welcome"]);
+      const filtered = parsed.filter((n) => n && n.id && !legacyIds.has(n.id));
+      if (filtered.length !== parsed.length) {
+        localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(filtered));
+      }
+      return filtered;
+    } catch {
+      return [];
+    }
   },
   saveNotifications: (notifs: AppNotification[]) => {
     localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(notifs));
@@ -339,7 +353,10 @@ export const storageService = {
     if (!data) return [];
     try {
       const parsed: ActivityItem[] = JSON.parse(data);
-      return parsed.filter((a) => {
+      if (!Array.isArray(parsed)) return [];
+      const legacyIds = new Set(["act_1", "act_2", "act_3", "act_sample"]);
+      const filtered = parsed.filter((a) => {
+        if (!a || !a.id || legacyIds.has(a.id) || a.id.startsWith("act_sample_")) return false;
         const titleLower = (a.title || "").toLowerCase();
         const descLower = (a.description || "").toLowerCase();
         return !titleLower.includes("wireshark") &&
@@ -348,6 +365,10 @@ export const storageService = {
                !descLower.includes("wireshark") &&
                !descLower.includes("wireshirk");
       });
+      if (filtered.length !== parsed.length) {
+        localStorage.setItem(KEYS.ACTIVITIES, JSON.stringify(filtered));
+      }
+      return filtered;
     } catch {
       return [];
     }
