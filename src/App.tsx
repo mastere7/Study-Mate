@@ -264,6 +264,7 @@ export default function App() {
 
   // Cross-component Deep-linking pre-fill parameters
   const [activeSubjectFilter, setActiveSubjectFilter] = useState<string | null>(null);
+  const [tutorPrePrompt, setTutorPrePrompt] = useState("");
   const [quizPreTopic, setQuizPreTopic] = useState("");
   const [quizPreText, setQuizPreText] = useState("");
   const [flashcardPreTopic, setFlashcardPreTopic] = useState("");
@@ -530,7 +531,7 @@ export default function App() {
         />
 
         {/* Main Container Layout - Fully responsive for mobile, tablets, and laptops */}
-        <div className="flex w-full min-h-[calc(100vh-57px)]">
+        <div className="flex w-full flex-1 min-h-0">
           {/* Left Navigation Sidebar */}
           <Sidebar
             activeTab={currentTab}
@@ -547,14 +548,24 @@ export default function App() {
           />
 
           {/* Main Content Area */}
-          <main className="flex-1 min-w-0 w-full overflow-x-hidden p-3 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-12 transition-all duration-300">
+          <main
+            className={`flex-1 min-w-0 w-full ${
+              currentTab === "tutor"
+                ? "p-2 sm:p-3 md:p-4 pb-2 sm:pb-3 md:pb-4 lg:pb-4 flex flex-col h-[calc(100dvh-125px)] lg:h-[calc(100dvh-57px)] max-h-[calc(100dvh-125px)] lg:max-h-[calc(100dvh-57px)] overflow-hidden"
+                : "p-3 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-12 overflow-x-hidden"
+            } transition-all duration-300`}
+          >
             {/* Universal Backward Navigation Bar */}
             {currentTab !== "dashboard" && (
-              <div className="mb-6 p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in transition-all">
+              <div
+                className={`${
+                  currentTab === "tutor" ? "mb-2 sm:mb-3 p-2 sm:p-2.5" : "mb-6 p-3 sm:p-4"
+                } rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-2 sm:gap-3 shrink-0 animate-in fade-in transition-all`}
+              >
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleGoBack}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all shadow-xs"
+                    className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all shadow-xs"
                     title="Go to previous view"
                   >
                     <ArrowLeft className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -563,7 +574,7 @@ export default function App() {
 
                   <button
                     onClick={handleGoHome}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all"
+                    className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all"
                     title="Return to Home Dashboard"
                   >
                     <Home className="w-3.5 h-3.5" />
@@ -598,6 +609,10 @@ export default function App() {
               notes={notes}
               groupSessions={groupSessions}
               onTabSelect={(tab) => setCurrentTab(tab)}
+              onStartTutorPrompt={(prompt) => {
+                setTutorPrePrompt(prompt);
+                setCurrentTab("tutor");
+              }}
               onUpdateUser={handleSaveUser}
               onSaveAssignments={handleSaveAssignments}
               onOpenAuthModal={() => setIsAuthOpen(true)}
@@ -638,7 +653,13 @@ export default function App() {
             />
           )}
 
-          {currentTab === "tutor" && <AITutorChat subjects={subjects} />}
+          {currentTab === "tutor" && (
+            <AITutorChat
+              subjects={subjects}
+              initialPrompt={tutorPrePrompt}
+              onClearInitialPrompt={() => setTutorPrePrompt("")}
+            />
+          )}
 
           {currentTab === "notes" && (
             <NotesScreen

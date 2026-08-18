@@ -10,24 +10,41 @@ export interface AITutorRequest {
 export const apiService = {
   // 1. AI Tutor Assistant
   askAITutor: async (req: AITutorRequest): Promise<string> => {
-    try {
-      const res = await fetch("/api/ai/tutor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(req),
-      });
+    let lastError: any = null;
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to contact AI Tutor.");
+    // Try up to 2 attempts
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch("/api/ai/tutor", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(req),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.error || `Request failed with status ${res.status}`;
+          const customError: any = new Error(errMsg);
+          customError.status = res.status;
+          customError.code = res.status;
+          throw customError;
+        }
+
+        const data = await res.json();
+        if (data.text) {
+          return data.text;
+        }
+      } catch (err: any) {
+        lastError = err;
+        // If it's a 503 or transient error on attempt 0, wait 600ms and try once more
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
       }
-
-      const data = await res.json();
-      return data.text;
-    } catch (err: any) {
-      console.warn("API Call /api/ai/tutor error fallback:", err);
-      return `I'm having trouble connecting to the backend server right now (${err.message}). Here's a quick offline guide: Make sure your query is broken down into small, digestible parts and review your subject notes!`;
     }
+
+    // Propagate error to trigger the UI alert and retry mechanism
+    throw lastError || new Error("Request failed, please try again (503 Service Unavailable)");
   },
 
   // 2. Document & PDF Analysis

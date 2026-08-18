@@ -28,6 +28,9 @@ import {
   ChevronRight,
   MessageSquare,
   FileText,
+  AlertTriangle,
+  AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 import { Subject, AIChatSession, AIChatMessage } from "../../types";
 import { apiService } from "../../services/api";
@@ -37,6 +40,8 @@ import { storageService } from "../../services/storage";
 interface AITutorChatProps {
   subjects: Subject[];
   activeSubjectId?: string | null;
+  initialPrompt?: string;
+  onClearInitialPrompt?: () => void;
 }
 
 const PRESET_MODES = [
@@ -66,6 +71,8 @@ const createWelcomeMessage = (): AIChatMessage => ({
 export const AITutorChat: React.FC<AITutorChatProps> = ({
   subjects,
   activeSubjectId,
+  initialPrompt,
+  onClearInitialPrompt,
 }) => {
   // Load initial sessions from storage
   const [sessions, setSessions] = useState<AIChatSession[]>(() => {
@@ -88,9 +95,35 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
     return loaded && loaded.length > 0 ? loaded[0].id : `session_${Date.now()}`;
   });
 
+  // Chat UI state
+  const [inputPrompt, setInputPrompt] = useState(initialPrompt || "");
+  const [isLoading, setIsLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [exportNotification, setExportNotification] = useState<string | null>(null);
+  const [errorAlert, setErrorAlert] = useState<{
+    message: string;
+    prompt: string;
+    code?: number | string;
+  } | null>(null);
+
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (initialPrompt && initialPrompt.trim()) {
+      setInputPrompt(initialPrompt);
+      if (onClearInitialPrompt) onClearInitialPrompt();
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+    }
+  }, [initialPrompt, onClearInitialPrompt]);
+
   // History panel & search states
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => {
-    return typeof window !== "undefined" ? window.innerWidth >= 1024 : false;
+    return typeof window !== "undefined" ? window.innerWidth >= 1280 : false;
   });
   const [historySearchQuery, setHistorySearchQuery] = useState<string>("");
 
@@ -100,16 +133,6 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
 
   // Delete confirmation state
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
-
-  // Chat UI state
-  const [inputPrompt, setInputPrompt] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [speakingId, setSpeakingId] = useState<string | null>(null);
-  const [isListening, setIsListening] = useState(false);
-  const [exportNotification, setExportNotification] = useState<string | null>(null);
-
-  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   // Sync active session object
   const activeSession =
@@ -246,10 +269,18 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
     return cleaned.slice(0, 32) + "...";
   };
 
+  // Retry a failed prompt
+  const handleRetry = (promptToRetry: string) => {
+    setErrorAlert(null);
+    handleSendMessage(promptToRetry);
+  };
+
   // Send Message Logic
   const handleSendMessage = async (textToSend?: string) => {
     const prompt = textToSend || inputPrompt;
     if (!prompt.trim() || isLoading || !activeSession) return;
+
+    setErrorAlert(null);
 
     const userMsg: AIChatMessage = {
       id: `usr_${Date.now()}`,
@@ -283,7 +314,7 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
 
     try {
       const history = activeSession.messages
-        .filter((m) => !m.id.startsWith("msg_welcome"))
+        .filter((m) => !m.id.startsWith("msg_welcome") && !m.isError)
         .map((m) => ({ role: m.role, content: m.content }));
 
       const responseText = await apiService.askAITutor({
@@ -311,12 +342,24 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
             : s
         )
       );
+      setErrorAlert(null);
     } catch (err: any) {
+      console.warn("AI Tutor caught error in component:", err);
+      const errorCode = err?.status || err?.code || 503;
+
+      setErrorAlert({
+        message: "Request failed, please try again",
+        prompt: prompt,
+        code: errorCode,
+      });
+
       const errorMsg: AIChatMessage = {
         id: `err_${Date.now()}`,
         role: "assistant",
-        content:
-          "I ran into an issue connecting to the tutor engine. Please check your connection or try again.",
+        content: "Request failed, please try again",
+        isError: true,
+        errorCode: errorCode,
+        retryPrompt: prompt,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
 
@@ -445,7 +488,7 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-100px)] max-w-7xl mx-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden relative">
+    <div className="AITutorChat flex flex-col flex-1 min-h-0 h-full w-full max-w-7xl mx-auto rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden relative">
       {/* Top Main Navigation Header */}
       <div className="flex items-center justify-between gap-3 p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/90 backdrop-blur-md">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -569,16 +612,16 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* HISTORY SIDEBAR */}
         {isHistoryOpen && (
-          <div className="fixed inset-0 z-40 lg:static lg:z-auto flex">
-            {/* Mobile backdrop */}
+          <div className="fixed inset-0 z-40 xl:static xl:z-auto flex">
+            {/* Mobile / Tablet backdrop */}
             <div
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs lg:hidden"
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs xl:hidden"
               onClick={() => setIsHistoryOpen(false)}
             />
-            <div className="relative w-72 sm:w-80 h-full shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 lg:bg-slate-50/50 lg:dark:bg-slate-900/50 flex flex-col transition-all z-10 shadow-2xl lg:shadow-none">
+            <div className="relative w-72 sm:w-80 h-full shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 xl:bg-slate-50/50 xl:dark:bg-slate-900/50 flex flex-col transition-all z-10 shadow-2xl xl:shadow-none">
               {/* Sidebar Search & New Chat Header */}
               <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
-                <div className="flex items-center justify-between lg:hidden mb-1">
+                <div className="flex items-center justify-between xl:hidden mb-1">
                   <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                     <History className="w-3.5 h-3.5 text-indigo-500" />
                     Chat History
@@ -691,9 +734,9 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
         )}
 
         {/* CHAT MAIN CONTENT AREA */}
-        <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-white dark:bg-slate-900 overflow-hidden">
           {/* Mode Selector Tabs */}
-          <div className="flex items-center gap-2 p-2.5 overflow-x-auto border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 pr-2">
+          <div className="flex items-center gap-2 p-2 sm:p-2.5 overflow-x-auto border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 pr-2 shrink-0">
             {PRESET_MODES.map((mode) => {
               const Icon = mode.icon;
               const isSelected = selectedMode === mode.id;
@@ -701,7 +744,7 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
                 <button
                   key={mode.id}
                   onClick={() => handleModeChange(mode.id)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all shrink-0 ${
                     isSelected
                       ? "bg-indigo-600 text-white shadow-sm"
                       : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
@@ -716,7 +759,7 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
           </div>
 
           {/* Messages Stream Area */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
             {activeSession?.messages.map((msg) => (
               <div
                 key={msg.id}
@@ -728,22 +771,81 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
                   className={`flex items-center justify-center w-8 h-8 rounded-xl shrink-0 ${
                     msg.role === "user"
                       ? "bg-indigo-600 text-white"
+                      : msg.isError
+                      ? "bg-amber-500 text-white shadow-md"
                       : "bg-gradient-to-tr from-indigo-500 to-cyan-500 text-white shadow-md"
                   }`}
                 >
-                  {msg.role === "user" ? <UserIcon className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                  {msg.role === "user" ? (
+                    <UserIcon className="w-4 h-4" />
+                  ) : msg.isError ? (
+                    <AlertTriangle className="w-4 h-4" />
+                  ) : (
+                    <Bot className="w-4 h-4" />
+                  )}
                 </div>
 
                 <div className="group relative space-y-1 max-w-[85%] sm:max-w-[90%]">
-                  <div
-                    className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
-                      msg.role === "user"
-                        ? "bg-indigo-600 text-white rounded-tr-none shadow-md"
-                        : "bg-slate-100 dark:bg-slate-800/90 text-slate-800 dark:text-slate-100 border border-slate-200/60 dark:border-slate-700/60 rounded-tl-none"
-                    }`}
-                  >
-                    {msg.content}
-                  </div>
+                  {msg.isError ? (
+                    /* User-Friendly Request Failed Alert Card with Retry Action */
+                    <div className="p-4 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 text-slate-800 dark:text-slate-100 rounded-tl-none space-y-3 shadow-xs">
+                      <div className="flex items-start gap-2.5">
+                        <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                          <AlertCircle className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200">
+                              Request failed, please try again
+                            </h4>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200/80 dark:bg-amber-900 text-amber-800 dark:text-amber-300">
+                              {msg.errorCode === 503 ? "503 High Demand" : `Error ${msg.errorCode || "503"}`}
+                            </span>
+                          </div>
+                          <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                            The AI tutor model is currently experiencing temporary high traffic. Your question has been safely preserved.
+                          </p>
+                          {msg.retryPrompt && (
+                            <div className="text-[11px] font-mono bg-white/70 dark:bg-slate-900/60 p-2 rounded-xl text-slate-700 dark:text-slate-300 border border-amber-200/60 dark:border-amber-800/40 truncate">
+                              &ldquo;{msg.retryPrompt}&rdquo;
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {msg.retryPrompt && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleRetry(msg.retryPrompt!)}
+                            disabled={isLoading}
+                            className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                            title="Retry asking this question"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Retry Request</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInputPrompt(msg.retryPrompt!)}
+                            className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-amber-200 dark:border-amber-800/60 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-all cursor-pointer"
+                          >
+                            Edit Prompt
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
+                        msg.role === "user"
+                          ? "bg-indigo-600 text-white rounded-tr-none shadow-md"
+                          : "bg-slate-100 dark:bg-slate-800/90 text-slate-800 dark:text-slate-100 border border-slate-200/60 dark:border-slate-700/60 rounded-tl-none"
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
+                  )}
 
                   {/* Message Footer Actions */}
                   <div
@@ -752,7 +854,7 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
                     }`}
                   >
                     <span>{msg.timestamp}</span>
-                    {msg.role === "assistant" && (
+                    {msg.role === "assistant" && !msg.isError && (
                       <>
                         <span>•</span>
                         <button
@@ -800,60 +902,113 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
             <div ref={chatBottomRef} />
           </div>
 
-          {/* Quick Prompt Pills */}
-          <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 overflow-x-auto">
-            <span className="text-[11px] font-bold text-slate-400 shrink-0 uppercase tracking-wider">
-              Try:
-            </span>
+          {/* Quick Prompt Suggestions Bar */}
+          <div className="px-3 sm:px-4 py-2.5 bg-slate-50/90 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-thin">
+            <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 shrink-0 uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+              <span>Suggested Questions:</span>
+            </div>
             {QUICK_PROMPTS.map((promptText, idx) => (
               <button
                 key={idx}
+                type="button"
                 onClick={() => handleSendMessage(promptText)}
-                className="px-2.5 py-1 rounded-full text-xs bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 whitespace-nowrap transition-all"
+                className="px-3 py-1.5 rounded-full text-xs bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium whitespace-nowrap transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer"
+                title={`Ask: "${promptText}"`}
               >
                 {promptText}
               </button>
             ))}
           </div>
 
-          {/* Input Form Bar */}
-          <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          {/* Sticky Alert Notification Toast if recent request encountered 503 or error */}
+          {errorAlert && (
+            <div className="px-4 py-2.5 bg-amber-50 dark:bg-amber-950/80 border-t border-amber-200 dark:border-amber-800/80 flex items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-100 shrink-0 transition-all">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="font-bold truncate">
+                  Request failed, please try again
+                </span>
+                <span className="hidden sm:inline-block text-[11px] text-amber-700 dark:text-amber-300">
+                  (Temporary 503 service spike)
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleRetry(errorAlert.prompt)}
+                  disabled={isLoading}
+                  className="px-3 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Retry Question</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setErrorAlert(null)}
+                  className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-200/50 dark:hover:bg-amber-900/50 cursor-pointer"
+                  title="Dismiss alert"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Input Form Bar - Always pinned and fully visible on tablet and mobile */}
+          <div className="flex-shrink-0 shrink-0 w-full p-2 sm:p-3 md:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky bottom-0 z-30 shadow-lg">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSendMessage();
               }}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 max-w-5xl mx-auto w-full flex-shrink-0"
             >
               {/* Voice Input Mic Button */}
               <button
                 type="button"
                 onClick={handleToggleVoiceInput}
-                className={`p-2.5 rounded-xl border transition-all ${
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border transition-all flex-shrink-0 shrink-0 cursor-pointer flex items-center justify-center ${
                   isListening
-                    ? "bg-rose-500 text-white border-rose-600 animate-pulse"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200"
+                    ? "bg-rose-500 text-white border-rose-600 animate-pulse shadow-md shadow-rose-500/30"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
                 }`}
-                title="Voice input"
+                title={isListening ? "Listening... Click to stop" : "Voice input (Speak question)"}
               >
                 {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
 
-              <input
-                type="text"
-                value={inputPrompt}
-                onChange={(e) => setInputPrompt(e.target.value)}
-                placeholder={`Ask StudyMate AI (${PRESET_MODES.find((m) => m.id === selectedMode)?.label})...`}
-                className="flex-1 px-4 py-2.5 text-xs sm:text-sm rounded-xl bg-slate-100 dark:bg-slate-800 border border-transparent focus:border-indigo-500 dark:focus:border-indigo-400 text-slate-900 dark:text-slate-100 placeholder-slate-400 outline-none"
-              />
+              {/* Question Text Input Path */}
+              <div className="relative flex-1 flex items-center min-w-0 w-full">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputPrompt}
+                  onChange={(e) => setInputPrompt(e.target.value)}
+                  placeholder={`Ask StudyMate AI (${PRESET_MODES.find((m) => m.id === selectedMode)?.label || "Tutor"})...`}
+                  className="w-full pl-3.5 sm:pl-4 pr-8 sm:pr-9 py-2.5 sm:py-3 text-xs sm:text-sm md:text-base font-medium rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 focus:border-indigo-500 dark:focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 outline-none shadow-2xs transition-all"
+                />
+                {inputPrompt && (
+                  <button
+                    type="button"
+                    onClick={() => setInputPrompt("")}
+                    className="absolute right-2.5 sm:right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
+                    title="Clear question"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
+              {/* Send Question Button */}
               <button
                 type="submit"
                 disabled={!inputPrompt.trim() || isLoading}
-                className="flex items-center justify-center p-2.5 sm:px-5 sm:py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold text-xs sm:text-sm transition-all shadow-md shadow-indigo-500/20"
+                className="flex items-center justify-center px-3 sm:px-5 md:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs sm:text-sm transition-all shadow-md shadow-indigo-500/25 flex-shrink-0 shrink-0 cursor-pointer active:scale-95"
+                title="Send study question"
               >
                 <Send className="w-4 h-4" />
-                <span className="hidden sm:inline-block ml-2">Send</span>
+                <span className="inline-block ml-1.5 sm:ml-2">Ask AI</span>
               </button>
             </form>
           </div>

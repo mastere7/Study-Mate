@@ -132,10 +132,11 @@ export const STUDY_TIPS: StudyTip[] = [
   },
 ];
 
-const WIDGET_ORDER_STORAGE_KEY = "studymate_dashboard_widget_order_v2";
+const WIDGET_ORDER_STORAGE_KEY = "studymate_dashboard_widget_order_v3";
 
 export type WidgetId =
   | "ai_tutor"
+  | "ai_quiz"
   | "quick_tip"
   | "learning_progress"
   | "enrolled_courses"
@@ -150,6 +151,7 @@ export type WidgetId =
 
 const DEFAULT_WIDGET_ORDER: WidgetId[] = [
   "ai_tutor",
+  "ai_quiz",
   "quick_tip",
   "learning_progress",
   "enrolled_courses",
@@ -165,6 +167,7 @@ const DEFAULT_WIDGET_ORDER: WidgetId[] = [
 
 const WIDGET_TITLES: Record<WidgetId, string> = {
   ai_tutor: "AI Tutor Assistant",
+  ai_quiz: "AI Quiz & Practice Arena",
   quick_tip: "Quick Tip of the Day (Study Techniques)",
   learning_progress: "Daily Study Goal & Progress Ring",
   enrolled_courses: "Course Subjects & Task Progress",
@@ -191,6 +194,7 @@ interface HomeDashboardProps {
   onQuickStartQuiz?: () => void;
   onQuickNewNote?: () => void;
   onQuickPomodoro?: () => void;
+  onStartTutorPrompt?: (prompt: string) => void;
   onUpdateUser?: (updated: UserProfile) => void;
   onSaveAssignments?: (updated: Assignment[]) => void;
   onOpenAuthModal?: () => void;
@@ -210,6 +214,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onQuickStartQuiz,
   onQuickNewNote,
   onQuickPomodoro,
+  onStartTutorPrompt,
   onUpdateUser,
   onSaveAssignments,
   onOpenAuthModal,
@@ -587,10 +592,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const completedAssignmentsCount = assignments.filter((a) => a.status === "Completed").length;
   const recentNote = notes[0];
 
-  const handleQuickAiSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (quickAiInput.trim()) {
-      navigate("tutor");
+  const handleQuickAiSubmit = (e: React.FormEvent, customPrompt?: string) => {
+    if (e) e.preventDefault();
+    const promptToSend = customPrompt || quickAiInput;
+    if (promptToSend.trim()) {
+      if (onStartTutorPrompt) {
+        onStartTutorPrompt(promptToSend.trim());
+      } else {
+        navigate("tutor");
+      }
+      setQuickAiInput("");
     }
   };
 
@@ -599,67 +610,186 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     switch (id) {
       case "ai_tutor":
         return (
-          <div className="flex flex-col justify-between h-full">
+          <div className="flex flex-col justify-between h-full space-y-3.5 relative z-10 min-h-[300px]">
             <div>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center space-x-2.5">
                   <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                  <h2 className="font-bold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
+                  <h2 className="font-extrabold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2">
                     <BrainCircuit className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                    StudyMate AI Assistant
+                    <span>StudyMate AI Assistant</span>
                   </h2>
                 </div>
-                <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 px-2.5 py-1 rounded-full font-mono font-bold border border-indigo-200 dark:border-indigo-800">
-                  GEMINI 1.5 FLASH
+                <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 px-2.5 py-1 rounded-full font-mono font-extrabold border border-indigo-200 dark:border-indigo-800 shrink-0">
+                  24/7 AI TUTOR
                 </span>
               </div>
 
               {/* Chat Preview Window */}
-              <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 space-y-3.5 border border-slate-100 dark:border-slate-800 max-h-56 overflow-y-auto">
+              <div className="bg-slate-50/90 dark:bg-slate-800/60 rounded-2xl p-3.5 space-y-3 border border-slate-200/70 dark:border-slate-800 max-h-48 overflow-y-auto scrollbar-thin">
                 <div className="flex space-x-2.5">
-                  <div className="w-7 h-7 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-xs shrink-0">
+                  <div className="w-7 h-7 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-xs">
                     AI
                   </div>
-                  <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl rounded-tl-none shadow-sm text-xs text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 leading-relaxed">
-                    How can I help you study today? You can ask me to explain any topic, summarize notes, or solve practice problems!
+                  <div className="bg-white dark:bg-slate-900 p-2.5 rounded-2xl rounded-tl-none shadow-2xs text-xs text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 leading-relaxed">
+                    How can I help you study today? Ask me any syllabus topic, paste code, or request step-by-step problem solutions!
                   </div>
                 </div>
 
                 <div className="flex space-x-2.5 justify-end">
-                  <div className="bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none shadow-sm text-xs leading-relaxed max-w-[80%] font-medium">
+                  <div className="bg-indigo-600 text-white p-2.5 rounded-2xl rounded-tr-none shadow-xs text-xs leading-relaxed max-w-[85%] font-medium">
                     Explain Dijkstra's shortest path algorithm simply with an example.
                   </div>
                 </div>
+              </div>
 
-                <div className="flex space-x-2.5">
-                  <div className="w-7 h-7 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-xs shrink-0">
-                    AI
-                  </div>
-                  <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl rounded-tl-none shadow-sm text-xs text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 leading-relaxed">
-                    Think of Dijkstra's algorithm like finding the quickest route on Google Maps. It explores starting from your location, recording tentative distances...
-                  </div>
+              {/* Suggested Question Chips */}
+              <div className="mt-3">
+                <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  <Sparkles className="w-3 h-3 text-amber-500 animate-pulse" />
+                  <span>Click to Ask Instant Question:</span>
+                </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                  {[
+                    "Explain TCP 3-Way Handshake",
+                    "Database Normalization (1NF-3NF)",
+                    "Solve derivative of x³·e²ˣ",
+                    "Organic Chem SN1 vs SN2",
+                  ].map((q, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleQuickAiSubmit(null as any, q)}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 whitespace-nowrap transition-all cursor-pointer active:scale-95 shrink-0"
+                    >
+                      {q}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Quick AI Input Prompt */}
-            <form onSubmit={handleQuickAiSubmit} className="mt-4 flex gap-2">
-              <input
-                type="text"
-                value={quickAiInput}
-                onChange={(e) => setQuickAiInput(e.target.value)}
-                placeholder="Type your study question here..."
-                className="flex-1 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
-              />
+            {/* Quick AI Question Input Form - Always visible with high contrast */}
+            <form onSubmit={handleQuickAiSubmit} className="pt-2 flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={quickAiInput}
+                  onChange={(e) => setQuickAiInput(e.target.value)}
+                  placeholder="Type your study question or topic here..."
+                  className="w-full bg-slate-50 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-800 font-medium transition-all shadow-2xs"
+                />
+                {quickAiInput && (
+                  <button
+                    type="button"
+                    onClick={() => setQuickAiInput("")}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <button
                 type="submit"
-                className="bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl transition-all shadow-md shrink-0 flex items-center justify-center"
+                className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white px-4 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-500/20 shrink-0 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer active:scale-95"
+                title="Send to AI Tutor"
               >
+                <span>Ask</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
           </div>
         );
+
+      case "ai_quiz": {
+        const completedQuizzes = quizzes.filter((q) => q.isCompleted);
+        const avgScore = completedQuizzes.length > 0
+          ? Math.round(completedQuizzes.reduce((acc, q) => acc + (q.score || 0), 0) / completedQuizzes.length)
+          : null;
+
+        return (
+          <div className="flex flex-col justify-between h-full space-y-3.5 relative z-10 min-h-[270px]">
+            <div className="space-y-3">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center justify-center shadow-xs shrink-0">
+                    <Sparkles className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 dark:text-white text-base flex items-center gap-2">
+                      <span>AI Quiz & Practice Arena</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      Adaptive MCQs, Instant AI Grading & Explanations
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-400/40 shrink-0">
+                  AI Powered
+                </span>
+              </div>
+
+              {/* Status & Stats Box */}
+              <div className="p-3.5 rounded-2xl bg-white/90 dark:bg-slate-900/90 border border-amber-200/80 dark:border-amber-900/60 shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600 dark:text-slate-400 font-bold flex items-center gap-1.5">
+                    <Award className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Quiz Bank Status</span>
+                  </span>
+                  <span className="font-extrabold text-slate-900 dark:text-white px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/40">
+                    {quizzes.length > 0 ? `${quizzes.length} Quizzes Ready` : "Ready to Generate"}
+                  </span>
+                </div>
+
+                {avgScore !== null ? (
+                  <div className="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 dark:text-slate-400 font-medium">Average Performance:</span>
+                      <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
+                        {avgScore}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(avgScore, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                    Test active recall with custom questions generated on any syllabus topic or note.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onQuickStartQuiz) onQuickStartQuiz();
+                  else navigate("quiz");
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-extrabold text-xs shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-center"
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>Launch AI Quiz</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("quiz")}
+                className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-700 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+              >
+                <span>View Quiz Bank</span>
+                <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+            </div>
+          </div>
+        );
+      }
 
       case "quick_tip": {
         const isSaved = savedTipIds.includes(currentTip.id);
@@ -1681,6 +1811,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     switch (id) {
       case "ai_tutor":
         return "md:col-span-2 lg:col-span-2 lg:row-span-2 bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-sm border border-slate-200 dark:border-slate-800";
+      case "ai_quiz":
+        return "md:col-span-2 lg:col-span-2 bg-gradient-to-br from-amber-500/10 via-white to-amber-500/5 dark:from-amber-950/30 dark:via-slate-900 dark:to-slate-900 rounded-[2rem] p-6 shadow-sm border border-amber-300/60 dark:border-amber-700/50 relative overflow-hidden";
       case "quick_tip":
         return "md:col-span-2 lg:col-span-2 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-amber-500/10 dark:from-amber-950/40 dark:via-slate-900 dark:to-indigo-950/30 rounded-[2rem] p-6 shadow-sm border border-amber-300/40 dark:border-amber-700/40 relative overflow-hidden";
       case "learning_progress":
@@ -1711,7 +1843,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 font-sans">
       {/* Bento Grid Header / Greeting & Layout Customizer Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-3 border-b border-slate-200/60 dark:border-slate-800/60">
         {(() => {
           const firstName = getUserFirstName();
           const authStatus = storageService.getAuthStatus();
@@ -1741,14 +1873,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   />
                   <button
                     type="submit"
-                    className="px-3 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs cursor-pointer"
+                    className="px-3 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs cursor-pointer whitespace-nowrap"
                   >
                     Save
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsEditingName(false)}
-                    className="px-2 py-1 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs cursor-pointer"
+                    className="px-2 py-1 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs cursor-pointer whitespace-nowrap"
                   >
                     Cancel
                   </button>
@@ -1784,13 +1916,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           );
         })()}
 
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           {onOpenSubjectModal && (
             <button
               onClick={onOpenSubjectModal}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0"
             >
-              <BookOpen className="w-4 h-4 text-indigo-500" />
+              <BookOpen className="w-4 h-4 text-indigo-500 shrink-0" />
               <span>{subjects.length > 0 ? `My Courses (${subjects.length})` : "+ Set Courses"}</span>
             </button>
           )}
@@ -1798,41 +1930,42 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           {/* Customizer Mode Toggle Button */}
           <button
             onClick={() => setIsCustomizingLayout(!isCustomizingLayout)}
-            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all border ${
+            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all border whitespace-nowrap shrink-0 cursor-pointer ${
               isCustomizingLayout
                 ? "bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/30"
                 : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"
             }`}
           >
-            <SlidersHorizontal className="w-4 h-4 text-indigo-500" />
+            <SlidersHorizontal className="w-4 h-4 text-indigo-500 shrink-0" />
             <span>{isCustomizingLayout ? "Done Prioritizing" : "Customize Layout"}</span>
           </button>
 
           {isCustomizingLayout && (
             <button
               onClick={resetLayout}
-              className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 transition-all"
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 transition-all whitespace-nowrap shrink-0 cursor-pointer"
               title="Reset to default widget layout"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Reset</span>
             </button>
           )}
 
           <button
             onClick={() => (onQuickPomodoro ? onQuickPomodoro() : navigate("pomodoro"))}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm transition-all shadow-md shadow-indigo-500/10"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm transition-all shadow-md shadow-indigo-500/10 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <Clock className="w-4 h-4" />
+            <Clock className="w-4 h-4 shrink-0" />
             <span>25m Focus Mode</span>
           </button>
 
           <button
             onClick={() => (onQuickStartQuiz ? onQuickStartQuiz() : navigate("quiz"))}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-xs sm:text-sm shadow-sm transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm shadow-md shadow-amber-500/20 transition-all border border-amber-400 cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+            title="Open AI Quiz Arena"
           >
-            <Sparkles className="w-4 h-4 text-amber-500" />
-            <span>AI Quiz</span>
+            <Sparkles className="w-4 h-4 shrink-0 text-slate-950" />
+            <span>AI Quiz Arena</span>
           </button>
         </div>
       </div>

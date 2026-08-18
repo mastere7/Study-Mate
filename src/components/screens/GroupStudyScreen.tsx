@@ -58,7 +58,11 @@ import {
   FlashcardDeck,
 } from "../../types";
 import { audioSynthService } from "../../services/audioSynth";
-import { fetchGroupSessionByIdOrCode, saveGroupSessionToFirestore } from "../../services/firebase";
+import {
+  fetchGroupSessionByIdOrCode,
+  saveGroupSessionToFirestore,
+  deleteGroupSessionFromFirestore,
+} from "../../services/firebase";
 import { CreateRoomModal } from "./group/CreateRoomModal";
 import { JoinCodeModal } from "./group/JoinCodeModal";
 import { HostRequestsPanel } from "./group/HostRequestsPanel";
@@ -132,7 +136,12 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     setTimeout(() => setToastMessage(null), 3200);
   };
 
-  const activeRoom = groupSessions.find((r) => r.id === activeRoomId);
+  const [localRooms, setLocalRooms] = useState<GroupStudySession[]>([]);
+
+  // Combined rooms ensuring newly created rooms or local sessions are always found immediately
+  const combinedRooms = [...localRooms, ...groupSessions.filter((g) => !localRooms.some((l) => l.id === g.id))];
+
+  const activeRoom = combinedRooms.find((r) => r.id === activeRoomId);
 
   // Sync room states on join
   useEffect(() => {
@@ -510,23 +519,25 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
 
   // Handle Room Created from Modal
   const handleRoomCreated = (newRoom: GroupStudySession) => {
-    const updatedList = [newRoom, ...groupSessions];
+    setLocalRooms((prev) => [newRoom, ...prev.filter((r) => r.id !== newRoom.id)]);
+    const updatedList = [newRoom, ...groupSessions.filter((r) => r.id !== newRoom.id)];
     onSaveGroupSessions(updatedList);
     saveGroupSessionToFirestore(newRoom);
     setActiveRoomId(newRoom.id);
-    showToast(`Live room "${newRoom.title}" launched successfully!`);
+    setActiveRoomTab("timer");
+    showToast(`Live room "${newRoom.title}" launched successfully! 🚀`);
   };
 
   // Quick 1-Click Room Preset Creation
   const handleQuickCreatePreset = (type: GroupRoomType, title: string, duration: number) => {
     const generatedCode = `FOCUS-${Math.floor(100 + Math.random() * 900)}`;
     const hostParticipant: GroupStudyParticipant = {
-      id: user.id || `u_${Date.now()}`,
-      name: user.name || "Study Host",
+      id: user?.id || `u_${Date.now()}`,
+      name: user?.name || "Study Host",
       avatarUrl:
-        user.avatarUrl ||
+        user?.avatarUrl ||
         `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-          user.name || "Host"
+          user?.name || "Host"
         )}`,
       role: "host",
       status: "studying",
@@ -544,18 +555,18 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
     };
 
     const newRoom: GroupStudySession = {
-      id: `room_${Date.now()}`,
+      id: `room_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       code: generatedCode,
       title: title,
       subjectId: subjects[0]?.id || "s_general",
       subjectName: subjects[0]?.name || "General Coursework",
       description: `Instant ${duration}-minute collaborative ${type} sprint.`,
-      hostId: user.id || `u_${Date.now()}`,
-      hostName: user.name || "Study Host",
+      hostId: user?.id || `u_${Date.now()}`,
+      hostName: user?.name || "Study Host",
       hostAvatar:
-        user.avatarUrl ||
+        user?.avatarUrl ||
         `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-          user.name || "Host"
+          user?.name || "Host"
         )}`,
       roomType: type,
       maxParticipants: 10,
@@ -573,11 +584,13 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       chatMessages: [initialSystemMsg],
     };
 
-    const updatedList = [newRoom, ...groupSessions];
+    setLocalRooms((prev) => [newRoom, ...prev.filter((r) => r.id !== newRoom.id)]);
+    const updatedList = [newRoom, ...groupSessions.filter((r) => r.id !== newRoom.id)];
     onSaveGroupSessions(updatedList);
     saveGroupSessionToFirestore(newRoom);
     setActiveRoomId(newRoom.id);
-    showToast(`Launched "${newRoom.title}"!`);
+    setActiveRoomTab("timer");
+    showToast(`Launched "${newRoom.title}"! 🚀`);
   };
 
   // Delete / End a Live Room
@@ -586,8 +599,10 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
       if (activeRoomId === roomId) {
         setActiveRoomId(null);
       }
+      setLocalRooms((prev) => prev.filter((r) => r.id !== roomId));
       const updated = groupSessions.filter((r) => r.id !== roomId);
       onSaveGroupSessions(updated);
+      deleteGroupSessionFromFirestore(roomId);
       showToast(`Room "${roomTitle}" has been closed.`);
     }
   };
@@ -706,7 +721,7 @@ export const GroupStudyScreen: React.FC<GroupStudyScreenProps> = ({
   };
 
   // Filtered rooms list for directory view
-  const filteredRooms = groupSessions.filter((room) => {
+  const filteredRooms = combinedRooms.filter((room) => {
     const matchesSearch =
       (room.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (room.subjectName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||

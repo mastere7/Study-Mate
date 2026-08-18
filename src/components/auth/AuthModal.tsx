@@ -96,7 +96,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const parseFirebaseError = (err: any): string => {
     const code = err?.code || "";
     if (code === "auth/operation-not-allowed") {
-      return "Email/Password sign-in is currently disabled in your Firebase project. Please enable Email/Password provider in the Firebase Console (Authentication > Sign-in method) or sign in with Google.";
+      return "The requested sign-in provider (Google or Email/Password) is disabled in your Firebase project. Enable it in the Firebase Console (Authentication > Sign-in method).";
+    }
+    if (code === "auth/unauthorized-domain") {
+      return "This domain is not authorized for OAuth/Google Sign-In yet. In the Firebase Console, navigate to Authentication > Settings > Authorized Domains and add this domain.";
+    }
+    if (code === "auth/popup-blocked") {
+      return "The Google Sign-In popup was blocked by your browser. Please allow popups or open the app in a new tab.";
     }
     if (code === "auth/email-already-in-use") return "This email is already registered. Please Sign In.";
     if (code === "auth/invalid-email") return "Please enter a valid email address.";

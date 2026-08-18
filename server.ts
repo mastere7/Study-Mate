@@ -37,6 +37,76 @@ function getGeminiAI() {
   });
 }
 
+// High-availability model list for study tasks
+const RESILIENT_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-3.7-flash",
+];
+
+interface ResilienceOptions {
+  contents: any;
+  config?: any;
+  primaryModel?: string;
+}
+
+async function generateContentWithResilience(
+  ai: GoogleGenAI,
+  options: ResilienceOptions
+) {
+  const primary = options.primaryModel || "gemini-3.1-flash-lite";
+  const modelQueue = [
+    primary,
+    ...RESILIENT_MODELS.filter((m) => m !== primary),
+  ];
+
+  let lastError: any = null;
+
+  for (const model of modelQueue) {
+    try {
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: options.contents,
+        config: options.config,
+      });
+
+      if (response && response.text) {
+        return response;
+      }
+    } catch (err: any) {
+      lastError = err;
+      const msg = (err?.message || "").toLowerCase();
+      
+      // If overloaded/503/rate limited, immediately try next model
+      if (
+        msg.includes("503") ||
+        msg.includes("high demand") ||
+        msg.includes("unavailable") ||
+        msg.includes("429") ||
+        msg.includes("resource_exhausted")
+      ) {
+        continue;
+      }
+
+      // If unexpected error, try once more with slight delay before next model
+      try {
+        await new Promise((r) => setTimeout(r, 300));
+        const retryResponse = await ai.models.generateContent({
+          model: model,
+          contents: options.contents,
+          config: options.config,
+        });
+        if (retryResponse && retryResponse.text) {
+          return retryResponse;
+        }
+      } catch (retryErr: any) {
+        lastError = retryErr;
+      }
+    }
+  }
+
+  throw lastError || new Error("All Gemini models currently unavailable.");
+}
+
 // -------------------------------------------------------------
 // API Endpoints
 // -------------------------------------------------------------
@@ -86,18 +156,32 @@ Your goal is to break down complex topics into clear, intuitive concepts. Always
     }
     contents.push({ role: "user", parts: [{ text: prompt }] });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: contents,
-      config: {
-        systemInstruction,
-        temperature: 0.7,
-      },
-    });
+    try {
+      const response = await generateContentWithResilience(ai, {
+        contents: contents,
+        config: {
+          systemInstruction,
+          temperature: 0.7,
+        },
+      });
 
-    return res.json({
-      text: response.text || "I'm sorry, I couldn't generate an answer. Please try again.",
-    });
+      return res.json({
+        text: response.text || "I'm here to help! Please clarify or try asking another study question.",
+      });
+    } catch (modelErr: any) {
+      console.warn("[Gemini API in /api/ai/tutor] Service unavailable / high demand:", modelErr.message);
+      const is503 = (modelErr.message || "").toLowerCase().includes("503") || 
+                    (modelErr.message || "").toLowerCase().includes("high demand") ||
+                    (modelErr.message || "").toLowerCase().includes("unavailable");
+      
+      return res.status(is503 ? 503 : 500).json({
+        error: is503 
+          ? "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later."
+          : (modelErr.message || "Failed to generate AI tutor response"),
+        code: is503 ? 503 : 500,
+        status: is503 ? "UNAVAILABLE" : "ERROR"
+      });
+    }
   } catch (error: any) {
     console.error("Error in /api/ai/tutor:", error);
     return res.status(500).json({ error: error.message || "Failed to generate AI tutor response" });
@@ -173,8 +257,7 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
     parts.push({ text: promptText });
 
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
+      const response = await generateContentWithResilience(ai, {
         contents: { parts },
         config: {
           systemInstruction: "You are an expert document research assistant and academic summarizer.",
@@ -229,8 +312,7 @@ Include question types: ${questionTypes ? questionTypes.join(", ") : "Multiple C
 
 Ensure every question includes 4 choices (for multiple choice), the correct answer string, and a helpful step-by-step explanation for why the answer is correct.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await generateContentWithResilience(ai, {
       contents: prompt,
       config: {
         systemInstruction: "You are a professional educational assessment creator.",
@@ -333,8 +415,7 @@ Rules for high-yield flashcards:
 
     parts.push({ text: promptInstructions });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await generateContentWithResilience(ai, {
       contents: { parts },
       config: {
         systemInstruction: "You are a flashcard memory expert specializing in active recall and spaced repetition Leitner methods.",
@@ -407,8 +488,7 @@ Provide a structured response:
 5. Two (2) Similar Practice Questions with solutions for revision.`,
     };
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await generateContentWithResilience(ai, {
       contents: { parts: [imagePart, textPart] },
       config: {
         systemInstruction: "You are a master academic OCR scanner and step-by-step math & science tutor.",
@@ -435,8 +515,7 @@ app.post("/api/ai/voice-explain", async (req, res) => {
 
     const ai = getGeminiAI();
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await generateContentWithResilience(ai, {
       contents: `Provide a concise, conversational 3 to 4 sentence explanation suitable for reading aloud to a student asking: "${question}". Topic context: ${topic || "general knowledge"}.`,
       config: {
         systemInstruction: "You are an enthusiastic, clear radio podcast host / voice tutor for students.",

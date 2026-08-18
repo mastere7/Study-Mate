@@ -264,6 +264,9 @@ export interface AIChatMessage {
   content: string;
   timestamp: string;
   mode?: string;
+  isError?: boolean;
+  errorCode?: number | string;
+  retryPrompt?: string;
 }
 
 export interface AIChatSession {
