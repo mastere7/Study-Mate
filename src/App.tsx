@@ -505,7 +505,7 @@ export default function App() {
 
   return (
     <LanguageProvider initialLanguage={language} onLanguageChange={setLanguage}>
-      <div className="min-h-screen bg-slate-100 dark:bg-[#080c14] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
+      <div className="h-screen max-h-screen flex flex-col bg-slate-100 dark:bg-[#080c14] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200 overflow-hidden">
         {/* Top Navbar */}
         <Navbar
           user={user}
@@ -531,7 +531,7 @@ export default function App() {
         />
 
         {/* Main Container Layout - Fully responsive for mobile, tablets, and laptops */}
-        <div className="flex w-full flex-1 min-h-0">
+        <div className="flex w-full flex-1 min-h-0 overflow-hidden">
           {/* Left Navigation Sidebar */}
           <Sidebar
             activeTab={currentTab}
@@ -551,16 +551,14 @@ export default function App() {
           <main
             className={`flex-1 min-w-0 w-full ${
               currentTab === "tutor"
-                ? "p-2 sm:p-3 md:p-4 pb-2 sm:pb-3 md:pb-4 lg:pb-4 flex flex-col h-[calc(100dvh-125px)] lg:h-[calc(100dvh-57px)] max-h-[calc(100dvh-125px)] lg:max-h-[calc(100dvh-57px)] overflow-hidden"
-                : "p-3 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-12 overflow-x-hidden"
+                ? "p-1.5 sm:p-2.5 md:p-3 flex flex-col h-full overflow-hidden"
+                : "p-3 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-12 overflow-y-auto overflow-x-hidden h-full"
             } transition-all duration-300`}
           >
-            {/* Universal Backward Navigation Bar */}
-            {currentTab !== "dashboard" && (
+            {/* Universal Backward Navigation Bar (Hidden on tutor to give maximum reading height) */}
+            {currentTab !== "dashboard" && currentTab !== "tutor" && (
               <div
-                className={`${
-                  currentTab === "tutor" ? "mb-2 sm:mb-3 p-2 sm:p-2.5" : "mb-6 p-3 sm:p-4"
-                } rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-2 sm:gap-3 shrink-0 animate-in fade-in transition-all`}
+                className="mb-6 p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3 shrink-0 animate-in fade-in transition-all"
               >
                 <div className="flex items-center gap-2">
                   <button
@@ -654,11 +652,15 @@ export default function App() {
           )}
 
           {currentTab === "tutor" && (
-            <AITutorChat
-              subjects={subjects}
-              initialPrompt={tutorPrePrompt}
-              onClearInitialPrompt={() => setTutorPrePrompt("")}
-            />
+            <div className="flex-1 min-h-0 h-full w-full overflow-hidden">
+              <AITutorChat
+                subjects={subjects}
+                initialPrompt={tutorPrePrompt}
+                onClearInitialPrompt={() => setTutorPrePrompt("")}
+                onGoBack={handleGoBack}
+                onGoHome={handleGoHome}
+              />
+            </div>
           )}
 
           {currentTab === "notes" && (

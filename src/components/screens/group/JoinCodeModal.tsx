@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { KeyRound, X, AlertCircle, ArrowRight, ShieldCheck, Clock } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { KeyRound, X, AlertCircle, ArrowRight, ShieldCheck, Clock, Copy, Check } from "lucide-react";
 import { GroupStudySession } from "../../../types";
 
 interface JoinCodeModalProps {
@@ -18,8 +18,26 @@ export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
   const [inputCode, setInputCode] = useState(room ? room.code : "");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setInputCode(room ? room.code : "");
+      setError("");
+      setIsSubmitting(false);
+      setCopied(false);
+    }
+  }, [isOpen, room]);
 
   if (!isOpen) return null;
+
+  const handleCopyCode = () => {
+    if (room?.code) {
+      navigator.clipboard.writeText(room.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +84,7 @@ export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             disabled={isSubmitting}
             className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 transition-colors"
@@ -73,6 +92,24 @@ export const JoinCodeModal: React.FC<JoinCodeModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* If room info provided, show room code preview */}
+        {room && (
+          <div className="p-3 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] uppercase font-bold text-indigo-700 dark:text-indigo-300">Room Code</p>
+              <p className="text-base font-mono font-extrabold text-slate-900 dark:text-white tracking-wider">{room.code}</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyCode}
+              className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-100 text-xs font-bold text-indigo-600 dark:text-indigo-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? "Copied!" : "Copy Code"}</span>
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-2">

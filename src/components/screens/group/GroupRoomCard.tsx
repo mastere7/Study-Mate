@@ -153,20 +153,22 @@ export const GroupRoomCard: React.FC<GroupRoomCardProps> = ({
         <div className="flex items-center justify-between gap-2">
           {/* Room Code Badge & Share */}
           <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+            <button
+              type="button"
+              onClick={handleCopyCode}
+              className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 px-2.5 py-1 rounded-lg border border-transparent hover:border-indigo-200 dark:hover:border-indigo-800 transition-all cursor-pointer"
+              title="Click to copy room code"
+            >
               <span className="text-[10px] text-slate-500 font-medium">Code:</span>
               <span className="text-[11px] font-mono font-extrabold text-indigo-600 dark:text-indigo-400">
                 {room.code}
               </span>
-              <button
-                onClick={handleCopyCode}
-                className="p-0.5 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer ml-1"
-                title="Copy code"
-              >
+              <span className="p-0.5 ml-1">
                 {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
-              </button>
-            </div>
+              </span>
+            </button>
             <button
+              type="button"
               onClick={handleShareLink}
               className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-300 transition-all cursor-pointer"
               title="Copy share link"

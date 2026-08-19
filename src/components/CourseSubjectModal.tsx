@@ -20,6 +20,9 @@ import {
   CheckCircle2,
   Calendar,
   ListTodo,
+  Copy,
+  Eye,
+  Share2,
 } from "lucide-react";
 import { Subject, Assignment } from "../types";
 import { storageService } from "../services/storage";
@@ -142,6 +145,8 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<"list" | "add" | "presets">("list");
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
+  const [viewingCourseDetails, setViewingCourseDetails] = useState<Subject | null>(null);
+  const [copiedCourseId, setCopiedCourseId] = useState<string | null>(null);
 
   // Form State
   const [formName, setFormName] = useState("");
@@ -158,6 +163,15 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
   const triggerToast = (msg: string) => {
     setSuccessToast(msg);
     setTimeout(() => setSuccessToast(null), 3000);
+  };
+
+  const handleCopyCourseCode = (subj: Subject, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const codeToCopy = subj.code || subj.name;
+    navigator.clipboard.writeText(codeToCopy);
+    setCopiedCourseId(subj.id);
+    triggerToast(`Copied code "${codeToCopy}" to clipboard!`);
+    setTimeout(() => setCopiedCourseId(null), 2500);
   };
 
   if (!isOpen) return null;
@@ -485,23 +499,41 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
                                   <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
                                     {subj.name}
                                   </h4>
-                                  {subj.code ? (
-                                    <span className="inline-block text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-                                      {subj.code}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-400">Custom Course</span>
-                                  )}
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    {subj.code ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleCopyCourseCode(subj, e)}
+                                        className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-200/90 dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/60 transition-all cursor-pointer"
+                                        title="Click to copy course code"
+                                      >
+                                        <span>{subj.code}</span>
+                                        {copiedCourseId === subj.id ? (
+                                          <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                        ) : (
+                                          <Copy className="w-2.5 h-2.5 opacity-60" />
+                                        )}
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEdit(subj)}
+                                        className="text-[10px] text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer"
+                                      >
+                                        + Set Code
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
 
-                              {/* Visual Progress Ring */}
-                              <div className="flex items-center gap-1.5 shrink-0">
+                              {/* Visual Progress Ring & Action Icons */}
+                              <div className="flex items-center gap-1 shrink-0">
                                 <div
-                                  className="relative w-9 h-9 shrink-0 flex items-center justify-center"
+                                  className="relative w-8 h-8 shrink-0 flex items-center justify-center"
                                   title={`${percent}% tasks completed (${completedTasks}/${totalTasks})`}
                                 >
-                                  <svg className="w-9 h-9 transform -rotate-90" viewBox="0 0 36 36">
+                                  <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
                                     <circle
                                       cx="18"
                                       cy="18"
@@ -525,7 +557,7 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
                                     />
                                   </svg>
                                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <span className={`text-[9px] font-black leading-none ${
+                                    <span className={`text-[8px] font-black leading-none ${
                                       percent === 100
                                         ? "text-emerald-600 dark:text-emerald-400"
                                         : totalTasks === 0
@@ -537,8 +569,17 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
                                   </div>
                                 </div>
 
-                                <div className="flex items-center">
+                                <div className="flex items-center gap-0.5">
                                   <button
+                                    type="button"
+                                    onClick={() => setViewingCourseDetails(subj)}
+                                    className="p-1.5 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition-all cursor-pointer"
+                                    title="View course code and details"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => handleStartEdit(subj)}
                                     className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition-all cursor-pointer"
                                     title="Edit course"
@@ -546,6 +587,7 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
                                     <Edit3 className="w-3.5 h-3.5" />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => handleDeleteSubject(subj.id, subj.name)}
                                     className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer"
                                     title="Delete course"
@@ -621,19 +663,29 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
                             </div>
                           </div>
 
-                          {/* Quick Filter toggle */}
-                          <div className="pt-2.5 mt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-xs">
-                            <span className="text-[10px] text-slate-400">Filter status:</span>
+                          {/* Card Footer: Quick Actions */}
+                          <div className="pt-2.5 mt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between gap-2 text-xs flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setViewingCourseDetails(subj)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-300 font-bold text-[11px] transition-all cursor-pointer"
+                              title="View Course Code and Details"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>View Code</span>
+                            </button>
+
                             {onSelectSubjectFilter && (
                               <button
+                                type="button"
                                 onClick={() => onSelectSubjectFilter(isFiltered ? null : subj.id)}
-                                className={`text-[11px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                className={`text-[11px] font-bold px-2 py-1 rounded-lg transition-all cursor-pointer ${
                                   isFiltered
-                                    ? "bg-indigo-600 text-white"
-                                    : "text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700"
+                                    ? "bg-indigo-600 text-white shadow-xs"
+                                    : "text-slate-500 hover:text-indigo-600 hover:bg-slate-200/80 dark:hover:bg-slate-700"
                                 }`}
                               >
-                                {isFiltered ? "Active Filter ✓" : "Set as Active Filter"}
+                                {isFiltered ? "Active Filter ✓" : "Filter by Course"}
                               </button>
                             )}
                           </div>
@@ -891,6 +943,107 @@ export const CourseSubjectModal: React.FC<CourseSubjectModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Course Code & Full Details Modal Overlay */}
+        {viewingCourseDetails && (
+          <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-2xl max-w-md w-full space-y-5 animate-in zoom-in-95">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-md ${viewingCourseDetails.color || "bg-indigo-600 text-white"}`}>
+                    {viewingCourseDetails.icon || "📚"}
+                  </div>
+                  <div>
+                    <h4 className="font-black text-lg text-slate-900 dark:text-white leading-tight">
+                      {viewingCourseDetails.name}
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Course Code & Details</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingCourseDetails(null)}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Course Code Box */}
+              <div className="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+                    Official Course Code
+                  </span>
+                  <span className="text-[10px] text-slate-400">ID: {viewingCourseDetails.id}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xl sm:text-2xl font-mono font-black text-slate-900 dark:text-white tracking-wide">
+                    {viewingCourseDetails.code || "NOT SET"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleCopyCourseCode(viewingCourseDetails, e)}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+                  >
+                    {copiedCourseId === viewingCourseDetails.id ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Description & Instructor */}
+              <div className="space-y-2 text-xs">
+                {viewingCourseDetails.instructor && (
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                    <User className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span><strong className="text-slate-900 dark:text-white">Instructor:</strong> {viewingCourseDetails.instructor}</span>
+                  </div>
+                )}
+                {viewingCourseDetails.description ? (
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800 space-y-1">
+                    <span className="font-bold text-slate-700 dark:text-slate-300">Description & Syllabus:</span>
+                    <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{viewingCourseDetails.description}</p>
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic">No course description provided.</p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const subj = viewingCourseDetails;
+                    setViewingCourseDetails(null);
+                    handleStartEdit(subj);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer transition-all"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Details</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingCourseDetails(null)}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 cursor-pointer transition-all"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Clear All Confirmation Dialog Overlay */}
         {showClearConfirm && (

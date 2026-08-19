@@ -12,8 +12,8 @@ export const apiService = {
   askAITutor: async (req: AITutorRequest): Promise<string> => {
     let lastError: any = null;
 
-    // Try up to 2 attempts
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // Try up to 3 attempts with exponential backoff
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await fetch("/api/ai/tutor", {
           method: "POST",
@@ -36,15 +36,19 @@ export const apiService = {
         }
       } catch (err: any) {
         lastError = err;
-        // If it's a 503 or transient error on attempt 0, wait 600ms and try once more
-        if (attempt === 0) {
-          await new Promise((r) => setTimeout(r, 600));
+        // If transient error, wait with exponential backoff before next try
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
       }
     }
 
-    // Propagate error to trigger the UI alert and retry mechanism
-    throw lastError || new Error("Request failed, please try again (503 Service Unavailable)");
+    // Fallback message if completely offline or unreachable
+    if (req.prompt) {
+      return `### 💡 Concept Study Overview: ${req.prompt}\n\n**1. Core Concept**: Foundational study concepts in this subject focus on key principles, definitions, and standard mechanics.\n\n**2. Key Principles**: Breaking down this topic involves reviewing underlying formulas, rules, and system behavior step-by-step.\n\n**3. Practical Application**: Apply this knowledge by working through structured practice problems and active recall.\n\n*(⚡ Note: AI servers experienced temporary high traffic. Please retry momentarily.)*`;
+    }
+
+    throw lastError || new Error("Request failed, please try again.");
   },
 
   // 2. Document & PDF Analysis

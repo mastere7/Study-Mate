@@ -41,6 +41,7 @@ import {
   CalendarDays,
   CheckSquare,
   Square,
+  Copy,
 } from "lucide-react";
 import { UserProfile, Subject, Note, Assignment, StudySchedule, Quiz, ActivityItem, PriorityLevel, TaskStatus, GroupStudySession } from "../../types";
 import { storageService } from "../../services/storage";
@@ -702,7 +703,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         );
 
       case "ai_quiz": {
-        const completedQuizzes = quizzes.filter((q) => q.isCompleted);
+        const completedQuizzes = quizzes.filter((q) => !!q.completedAt);
         const avgScore = completedQuizzes.length > 0
           ? Math.round(completedQuizzes.reduce((acc, q) => acc + (q.score || 0), 0) / completedQuizzes.length)
           : null;
@@ -1661,9 +1662,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                               </h4>
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 {subj.code ? (
-                                  <span className="inline-block text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-                                    {subj.code}
-                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(subj.code!);
+                                      setGoalToastMsg(`Copied course code: ${subj.code} 📋`);
+                                      setTimeout(() => setGoalToastMsg(null), 2500);
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/80 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 transition-all cursor-pointer border border-indigo-200/50 dark:border-indigo-800/50"
+                                    title="Click to copy course code"
+                                  >
+                                    <span>{subj.code}</span>
+                                    <Copy className="w-2.5 h-2.5 opacity-60" />
+                                  </button>
                                 ) : (
                                   <span className="text-[10px] text-slate-400">Course</span>
                                 )}
@@ -1773,16 +1784,27 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
                       {/* Footer Actions */}
                       <div className="pt-2.5 mt-2.5 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-xs">
-                        <button
-                          onClick={() => {
-                            setNewDeadlineSubjectId(subj.id);
-                            setIsAddDeadlineModalOpen(true);
-                          }}
-                          className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Add Task</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setNewDeadlineSubjectId(subj.id);
+                              setIsAddDeadlineModalOpen(true);
+                            }}
+                            className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add Task</span>
+                          </button>
+                          {onOpenSubjectModal && (
+                            <button
+                              onClick={onOpenSubjectModal}
+                              className="text-[11px] font-bold text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-300 flex items-center gap-0.5 cursor-pointer"
+                              title="View and edit course settings"
+                            >
+                              <span>Details</span>
+                            </button>
+                          )}
+                        </div>
 
                         <button
                           onClick={() => navigate("planner")}
