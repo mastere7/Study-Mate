@@ -344,8 +344,14 @@ export const storageService = {
       return [];
     }
   },
+  getRoadmapBadges: (): RoadmapBadge[] => {
+    return storageService.getUnlockedBadges();
+  },
   saveUnlockedBadges: (badges: RoadmapBadge[]) => {
     localStorage.setItem(KEYS.ROADMAP_BADGES, JSON.stringify(badges));
+  },
+  saveRoadmapBadges: (badges: RoadmapBadge[]) => {
+    storageService.saveUnlockedBadges(badges);
   },
 
   getActivities: (): ActivityItem[] => {

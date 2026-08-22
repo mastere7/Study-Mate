@@ -54,6 +54,7 @@ import {
   DEFAULT_TOPIC_NODES,
   DEFAULT_TOPIC_EDGES,
   DEFAULT_CHAT_SESSIONS,
+  storageService,
 } from "./storage";
 
 export { onAuthStateChanged };
@@ -68,6 +69,25 @@ export const googleProvider = new GoogleAuthProvider();
 export const db = firebaseConfig.firestoreDatabaseId
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
   : getFirestore(app);
+
+// Safe network fetch helpers to prevent offline/network-request errors from crashing UI
+const safeGetDoc = async (docRef: any) => {
+  try {
+    return await getDoc(docRef);
+  } catch (err: any) {
+    console.warn(`Firestore getDoc offline/unreachable for ${docRef.path}:`, err?.message || err);
+    return null;
+  }
+};
+
+const safeGetDocs = async (colRef: any) => {
+  try {
+    return await getDocs(colRef);
+  } catch (err: any) {
+    console.warn(`Firestore getDocs offline/unreachable for ${colRef.path}:`, err?.message || err);
+    return null;
+  }
+};
 
 // Authentication Helpers
 export const registerWithEmail = async (email: string, pass: string, name: string, gradeLevel?: string, major?: string) => {
@@ -212,18 +232,18 @@ export const seedInitialUserData = async (userId: string) => {
 
     await batch.commit();
   } catch (err) {
-    console.error("Error seeding starter user data:", err);
+    console.warn("Could not seed starter user data to Firestore (operating locally):", err);
   }
 };
 
-// Firestore User Data Fetchers
+// Firestore User Data Fetchers with complete offline resilience
 export const fetchUserData = async (userId: string) => {
   try {
     const userDocRef = doc(db, "users", userId);
-    const userSnap = await getDoc(userDocRef);
-    const profile: User | null = userSnap.exists() ? (userSnap.data() as User) : null;
+    const userSnap = await safeGetDoc(userDocRef);
+    const profile: User | null = userSnap && userSnap.exists() ? (userSnap.data() as User) : null;
 
-    // Fetch subcollections in parallel
+    // Fetch subcollections in parallel with resilient error boundary
     const [
       subjectsSnap,
       notesSnap,
@@ -240,42 +260,86 @@ export const fetchUserData = async (userId: string) => {
       logsSnap,
       badgesSnap,
     ] = await Promise.all([
-      getDocs(collection(db, "users", userId, "subjects")),
-      getDocs(collection(db, "users", userId, "notes")),
-      getDocs(collection(db, "users", userId, "documents")),
-      getDocs(collection(db, "users", userId, "assignments")),
-      getDocs(collection(db, "users", userId, "schedules")),
-      getDocs(collection(db, "users", userId, "quizzes")),
-      getDocs(collection(db, "users", userId, "decks")),
-      getDocs(collection(db, "users", userId, "sessions")),
-      getDocs(collection(db, "users", userId, "notifications")),
-      getDocs(collection(db, "users", userId, "topicNodes")),
-      getDocs(collection(db, "users", userId, "topicEdges")),
-      getDocs(collection(db, "users", userId, "chatSessions")),
-      getDocs(collection(db, "users", userId, "studyLogs")),
-      getDocs(collection(db, "users", userId, "roadmapBadges")),
+      safeGetDocs(collection(db, "users", userId, "subjects")),
+      safeGetDocs(collection(db, "users", userId, "notes")),
+      safeGetDocs(collection(db, "users", userId, "documents")),
+      safeGetDocs(collection(db, "users", userId, "assignments")),
+      safeGetDocs(collection(db, "users", userId, "schedules")),
+      safeGetDocs(collection(db, "users", userId, "quizzes")),
+      safeGetDocs(collection(db, "users", userId, "decks")),
+      safeGetDocs(collection(db, "users", userId, "sessions")),
+      safeGetDocs(collection(db, "users", userId, "notifications")),
+      safeGetDocs(collection(db, "users", userId, "topicNodes")),
+      safeGetDocs(collection(db, "users", userId, "topicEdges")),
+      safeGetDocs(collection(db, "users", userId, "chatSessions")),
+      safeGetDocs(collection(db, "users", userId, "studyLogs")),
+      safeGetDocs(collection(db, "users", userId, "roadmapBadges")),
     ]);
 
     return {
-      profile,
-      subjects: subjectsSnap.docs.map((d) => d.data() as Subject),
-      notes: notesSnap.docs.map((d) => d.data() as Note),
-      documents: documentsSnap.docs.map((d) => d.data() as DocumentItem),
-      assignments: assignmentsSnap.docs.map((d) => d.data() as Assignment),
-      schedules: schedulesSnap.docs.map((d) => d.data() as StudySchedule),
-      quizzes: quizzesSnap.docs.map((d) => d.data() as Quiz),
-      decks: decksSnap.docs.map((d) => d.data() as FlashcardDeck),
-      sessions: sessionsSnap.docs.map((d) => d.data() as PomodoroSession),
-      notifications: notificationsSnap.docs.map((d) => d.data() as AppNotification),
-      topicNodes: topicNodesSnap.docs.map((d) => d.data() as TopicNode),
-      topicEdges: topicEdgesSnap.docs.map((d) => d.data() as TopicEdge),
-      chatSessions: chatSessionsSnap.docs.map((d) => d.data() as AIChatSession),
-      studyLogs: logsSnap.docs.map((d) => d.data() as DailyStudyLog),
-      roadmapBadges: badgesSnap.docs.map((d) => d.data() as RoadmapBadge),
+      profile: profile || storageService.getUser(),
+      subjects: subjectsSnap && subjectsSnap.docs.length > 0
+        ? subjectsSnap.docs.map((d) => d.data() as Subject)
+        : storageService.getSubjects(),
+      notes: notesSnap && notesSnap.docs.length > 0
+        ? notesSnap.docs.map((d) => d.data() as Note)
+        : storageService.getNotes(),
+      documents: documentsSnap && documentsSnap.docs.length > 0
+        ? documentsSnap.docs.map((d) => d.data() as DocumentItem)
+        : storageService.getDocuments(),
+      assignments: assignmentsSnap && assignmentsSnap.docs.length > 0
+        ? assignmentsSnap.docs.map((d) => d.data() as Assignment)
+        : storageService.getAssignments(),
+      schedules: schedulesSnap && schedulesSnap.docs.length > 0
+        ? schedulesSnap.docs.map((d) => d.data() as StudySchedule)
+        : storageService.getSchedules(),
+      quizzes: quizzesSnap && quizzesSnap.docs.length > 0
+        ? quizzesSnap.docs.map((d) => d.data() as Quiz)
+        : storageService.getQuizzes(),
+      decks: decksSnap && decksSnap.docs.length > 0
+        ? decksSnap.docs.map((d) => d.data() as FlashcardDeck)
+        : storageService.getDecks(),
+      sessions: sessionsSnap && sessionsSnap.docs.length > 0
+        ? sessionsSnap.docs.map((d) => d.data() as PomodoroSession)
+        : storageService.getSessions(),
+      notifications: notificationsSnap && notificationsSnap.docs.length > 0
+        ? notificationsSnap.docs.map((d) => d.data() as AppNotification)
+        : storageService.getNotifications(),
+      topicNodes: topicNodesSnap && topicNodesSnap.docs.length > 0
+        ? topicNodesSnap.docs.map((d) => d.data() as TopicNode)
+        : storageService.getTopicNodes(),
+      topicEdges: topicEdgesSnap && topicEdgesSnap.docs.length > 0
+        ? topicEdgesSnap.docs.map((d) => d.data() as TopicEdge)
+        : storageService.getTopicEdges(),
+      chatSessions: chatSessionsSnap && chatSessionsSnap.docs.length > 0
+        ? chatSessionsSnap.docs.map((d) => d.data() as AIChatSession)
+        : storageService.getChatSessions(),
+      studyLogs: logsSnap && logsSnap.docs.length > 0
+        ? logsSnap.docs.map((d) => d.data() as DailyStudyLog)
+        : storageService.getStudyLogs(),
+      roadmapBadges: badgesSnap && badgesSnap.docs.length > 0
+        ? badgesSnap.docs.map((d) => d.data() as RoadmapBadge)
+        : storageService.getRoadmapBadges(),
     };
-  } catch (err) {
-    console.error("Failed to load user data from Firestore:", err);
-    return null;
+  } catch (err: any) {
+    console.warn("Firestore operating in offline/local cache mode:", err?.message || err);
+    return {
+      profile: storageService.getUser(),
+      subjects: storageService.getSubjects(),
+      notes: storageService.getNotes(),
+      documents: storageService.getDocuments(),
+      assignments: storageService.getAssignments(),
+      schedules: storageService.getSchedules(),
+      quizzes: storageService.getQuizzes(),
+      decks: storageService.getDecks(),
+      sessions: storageService.getSessions(),
+      notifications: storageService.getNotifications(),
+      topicNodes: storageService.getTopicNodes(),
+      topicEdges: storageService.getTopicEdges(),
+      chatSessions: storageService.getChatSessions(),
+      studyLogs: storageService.getStudyLogs(),
+      roadmapBadges: storageService.getRoadmapBadges(),
+    };
   }
 };
 
@@ -284,7 +348,7 @@ export const syncUserDoc = async (userId: string, data: Partial<User>) => {
   try {
     await setDoc(doc(db, "users", userId), data, { merge: true });
   } catch (err) {
-    console.error("Error syncing user profile to Firestore:", err);
+    console.warn("Firestore profile sync deferred (offline/cached):", err);
   }
 };
 
@@ -292,7 +356,7 @@ export const syncItemToFirestore = async (userId: string, collectionName: string
   try {
     await setDoc(doc(db, "users", userId, collectionName, itemId), data, { merge: true });
   } catch (err) {
-    console.error(`Error saving ${collectionName}/${itemId} to Firestore:`, err);
+    console.warn(`Firestore ${collectionName}/${itemId} sync deferred (offline/cached):`, err);
   }
 };
 
@@ -300,7 +364,7 @@ export const deleteItemFromFirestore = async (userId: string, collectionName: st
   try {
     await deleteDoc(doc(db, "users", userId, collectionName, itemId));
   } catch (err) {
-    console.error(`Error deleting ${collectionName}/${itemId} from Firestore:`, err);
+    console.warn(`Firestore delete ${collectionName}/${itemId} deferred (offline/cached):`, err);
   }
 };
 
@@ -315,7 +379,7 @@ export const syncFullCollection = async (userId: string, collectionName: string,
     }
     await batch.commit();
   } catch (err) {
-    console.error(`Error batch syncing ${collectionName} to Firestore:`, err);
+    console.warn(`Firestore batch sync ${collectionName} deferred (offline/cached):`, err);
   }
 };
 

@@ -22,6 +22,7 @@ import { Note, Subject } from "../../types";
 import { apiService } from "../../services/api";
 import { exportService } from "../../services/exportService";
 import { storageService } from "../../services/storage";
+import { MarkdownRenderer } from "../MarkdownRenderer";
 
 interface NotesScreenProps {
   notes: Note[];
@@ -723,8 +724,8 @@ export const NotesScreen: React.FC<NotesScreenProps> = ({
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
-                  {activeSummaryText}
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-sans">
+                  <MarkdownRenderer>{activeSummaryText}</MarkdownRenderer>
                 </div>
 
                 <div className="flex items-center justify-between gap-3 pt-2">

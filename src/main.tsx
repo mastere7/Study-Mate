@@ -7,9 +7,19 @@ import { registerServiceWorker } from './serviceWorkerRegistration';
 // Suppress benign Vite HMR WebSocket connection warnings in sandboxed preview iframe
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
-    const msg = event.reason?.message || (typeof event.reason === 'string' ? event.reason : '');
-    if (msg.includes('WebSocket') || msg.includes('websocket')) {
+    const reason = event.reason;
+    const msg = (reason?.message || reason?.stack || (typeof reason === 'string' ? reason : '') || String(reason || '')).toLowerCase();
+    if (msg.includes('websocket') || msg.includes('vite') || msg.includes('closed without')) {
       event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  });
+
+  window.addEventListener('error', (event) => {
+    const msg = (event.message || event.error?.message || '').toLowerCase();
+    if (msg.includes('websocket') || msg.includes('vite') || msg.includes('closed without')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
     }
   });
 }

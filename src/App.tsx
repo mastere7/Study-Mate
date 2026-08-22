@@ -217,41 +217,74 @@ export default function App() {
             storageService.setAuthStatus("returning_user");
           }
 
-          const userSubjects = data.subjects || [];
-          setSubjects(userSubjects);
-          storageService.saveSubjects(userSubjects);
+          if (data.subjects && data.subjects.length > 0) {
+            setSubjects(data.subjects);
+            storageService.saveSubjects(data.subjects);
+          } else {
+            const localSubs = storageService.getSubjects();
+            if (localSubs.length > 0) setSubjects(localSubs);
+          }
 
-          const userNotes = data.notes || [];
-          setNotes(userNotes);
-          storageService.saveNotes(userNotes);
+          if (data.notes && data.notes.length > 0) {
+            setNotes(data.notes);
+            storageService.saveNotes(data.notes);
+          } else {
+            const localNotes = storageService.getNotes();
+            if (localNotes.length > 0) setNotes(localNotes);
+          }
 
-          const userDocs = data.documents || [];
-          setDocuments(userDocs);
-          storageService.saveDocuments(userDocs);
+          if (data.documents && data.documents.length > 0) {
+            setDocuments(data.documents);
+            storageService.saveDocuments(data.documents);
+          } else {
+            const localDocs = storageService.getDocuments();
+            if (localDocs.length > 0) setDocuments(localDocs);
+          }
 
-          const userAssignments = data.assignments || [];
-          setAssignments(userAssignments);
-          storageService.saveAssignments(userAssignments);
+          if (data.assignments && data.assignments.length > 0) {
+            setAssignments(data.assignments);
+            storageService.saveAssignments(data.assignments);
+          } else {
+            const localAssignments = storageService.getAssignments();
+            if (localAssignments.length > 0) setAssignments(localAssignments);
+          }
 
-          const userSchedules = data.schedules || [];
-          setSchedules(userSchedules);
-          storageService.saveSchedules(userSchedules);
+          if (data.schedules && data.schedules.length > 0) {
+            setSchedules(data.schedules);
+            storageService.saveSchedules(data.schedules);
+          } else {
+            const localSchedules = storageService.getSchedules();
+            if (localSchedules.length > 0) setSchedules(localSchedules);
+          }
 
-          const userQuizzes = data.quizzes || [];
-          setQuizzes(userQuizzes);
-          storageService.saveQuizzes(userQuizzes);
+          if (data.quizzes && data.quizzes.length > 0) {
+            setQuizzes(data.quizzes);
+            storageService.saveQuizzes(data.quizzes);
+          } else {
+            const localQuizzes = storageService.getQuizzes();
+            if (localQuizzes.length > 0) setQuizzes(localQuizzes);
+          }
 
-          const userDecks = data.decks || [];
-          setDecks(userDecks);
-          storageService.saveDecks(userDecks);
+          if (data.decks && data.decks.length > 0) {
+            setDecks(data.decks);
+            storageService.saveDecks(data.decks);
+          } else {
+            const localDecks = storageService.getDecks();
+            if (localDecks.length > 0) setDecks(localDecks);
+          }
 
-          const userSessions = data.sessions || [];
-          setSessions(userSessions);
-          storageService.saveSessions(userSessions);
+          if (data.sessions && data.sessions.length > 0) {
+            setSessions(data.sessions);
+            storageService.saveSessions(data.sessions);
+          } else {
+            const localSessions = storageService.getSessions();
+            if (localSessions.length > 0) setSessions(localSessions);
+          }
 
-          const userNotifications = data.notifications || [];
-          setNotifications(userNotifications);
-          storageService.saveNotifications(userNotifications);
+          if (data.notifications && data.notifications.length > 0) {
+            setNotifications(data.notifications);
+            storageService.saveNotifications(data.notifications);
+          }
         }
       } else {
         setIsFirebaseAuthenticated(false);

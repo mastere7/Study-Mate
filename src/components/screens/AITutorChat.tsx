@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import Markdown from "react-markdown";
+import { MarkdownRenderer } from "../MarkdownRenderer";
 import {
   Bot,
   Send,
@@ -969,8 +969,8 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                       {msg.role === "user" ? (
                         msg.content
                       ) : (
-                        <div className="markdown-body text-sm sm:text-[15px] text-slate-800 dark:text-slate-100 leading-relaxed break-words space-y-3.5 [&_p]:mb-3.5 [&_p]:last:mb-0 [&_p]:leading-relaxed [&_p]:text-slate-800 [&_p]:dark:text-slate-200 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3.5 [&_li]:my-1.5 [&_strong]:font-extrabold [&_strong]:text-slate-900 [&_strong]:dark:text-white [&_pre]:bg-slate-900 [&_pre]:text-slate-100 [&_pre]:p-4 [&_pre]:rounded-xl [&_pre]:overflow-x-auto [&_pre]:my-3.5 [&_pre]:border [&_pre]:border-slate-800 [&_code]:font-mono [&_code]:text-xs [&_code]:bg-slate-100 [&_code]:dark:bg-slate-900 [&_code]:text-indigo-600 [&_code]:dark:text-indigo-400 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_pre_code]:bg-transparent [&_pre_code]:text-slate-100 [&_pre_code]:p-0 [&_h1]:text-lg [&_h1]:font-extrabold [&_h1]:text-slate-900 [&_h1]:dark:text-white [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-slate-900 [&_h2]:dark:text-white [&_h2]:mt-3.5 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-indigo-600 [&_h3]:dark:text-indigo-400 [&_h3]:mt-3 [&_h3]:mb-1.5 [&_blockquote]:border-l-4 [&_blockquote]:border-indigo-500 [&_blockquote]:pl-3.5 [&_blockquote]:py-1 [&_blockquote]:italic [&_blockquote]:text-slate-600 [&_blockquote]:dark:text-slate-300 [&_blockquote]:my-3 [&_hr]:my-4 [&_hr]:border-slate-200 [&_hr]:dark:border-slate-700">
-                          <Markdown>{msg.content}</Markdown>
+                        <div className="text-slate-800 dark:text-slate-100">
+                          <MarkdownRenderer>{msg.content}</MarkdownRenderer>
                         </div>
                       )}
                     </div>
