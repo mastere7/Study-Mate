@@ -3,6 +3,9 @@ import path from "path";
 import multer from "multer";
 import dotenv from "dotenv";
 import mammoth from "mammoth";
+// @ts-ignore
+import * as pdfParseModule from "pdf-parse";
+const pdfParse = (pdfParseModule as any).default || pdfParseModule;
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 
@@ -39,8 +42,10 @@ function getGeminiAI() {
 
 // High-availability model list for study tasks (ordered by reliability for general text & Q&A)
 const RESILIENT_MODELS = [
+  "gemini-2.5-flash",
   "gemini-3.7-flash",
-  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash-lite",
+  "gemini-flash-latest",
 ];
 
 interface ResilienceOptions {
@@ -73,7 +78,7 @@ To illustrate this in practice, consider how this principle applies to real-worl
 - **Active Recall Checklist**: Test your understanding by explaining this concept in your own words without looking at reference notes.
 - **Study Tip**: Connect this concept to adjacent topics in ${subjName} to strengthen your mental schema.
 
-*(⚡ Note: Response generated via StudyMate Knowledge Core while upstream AI servers experienced momentary high traffic. Click "Retry Request" anytime to query live AI models directly.)*`;
+*(⚡ Note: Response synthesized via StudyMate Knowledge Engine during peak upstream traffic. Click "Re-query Live AI" below to instantly refresh via live Gemini models.)*`;
 }
 
 async function generateContentWithResilience(
@@ -90,11 +95,12 @@ async function generateContentWithResilience(
 
   for (const model of modelQueue) {
     // Try each model with exponential backoff on transient 503/429/high-traffic errors
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         if (attempt > 0) {
-          // Wait with exponential backoff before retry (400ms, 800ms)
-          await new Promise((r) => setTimeout(r, 400 * attempt));
+          // Wait with exponential backoff + jitter before retry (300ms, 700ms, 1200ms)
+          const jitter = Math.floor(Math.random() * 150);
+          await new Promise((r) => setTimeout(r, 350 * attempt + jitter));
         }
 
         const response = await ai.models.generateContent({
@@ -118,7 +124,8 @@ async function generateContentWithResilience(
           msg.includes("429") ||
           msg.includes("resource_exhausted") ||
           msg.includes("quota") ||
-          msg.includes("overloaded");
+          msg.includes("overloaded") ||
+          msg.includes("service unavailable");
 
         if (!isTransient && attempt === 0) {
           // If non-transient error on first attempt, immediately try next model in queue
@@ -251,13 +258,38 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
         // Legacy Word .doc file text extraction
         const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ");
         parts.push({ text: `Document "${filename}" (Word Document Content):\n\n${rawText}` });
+      } else if (fnLower.endsWith(".pdf") || mimeType.includes("pdf")) {
+        try {
+          const pdfData = await pdfParse(file.buffer);
+          const extractedPdfText = (pdfData.text || "").trim();
+          if (extractedPdfText.length > 20) {
+            parts.push({ text: `Document "${filename}" (Extracted PDF Content):\n\n${extractedPdfText.substring(0, 45000)}` });
+          } else {
+            const base64Data = file.buffer.toString("base64");
+            parts.push({
+              inlineData: {
+                data: base64Data,
+                mimeType: "application/pdf",
+              },
+            });
+          }
+        } catch (pdfErr) {
+          console.warn("PDF parsing fallback to inlineData:", pdfErr);
+          const base64Data = file.buffer.toString("base64");
+          parts.push({
+            inlineData: {
+              data: base64Data,
+              mimeType: "application/pdf",
+            },
+          });
+        }
       } else if (fnLower.endsWith(".txt") || mimeType.startsWith("text/")) {
         const textData = file.buffer.toString("utf-8");
         parts.push({ text: `Document "${filename}" Content:\n\n${textData}` });
       } else {
-        // PDFs, Images, or standard supported formats for Gemini inlineData
+        // Images or standard supported formats for Gemini inlineData
         const base64Data = file.buffer.toString("base64");
-        const safeMime = mimeType || (fnLower.endsWith(".pdf") ? "application/pdf" : "application/pdf");
+        const safeMime = mimeType || "image/jpeg";
         parts.push({
           inlineData: {
             data: base64Data,
@@ -415,11 +447,35 @@ app.post("/api/ai/generate-flashcards", upload.single("file"), async (req, res) 
           const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ");
           parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${rawText}` });
         }
+      } else if (fnLower.endsWith(".pdf") || mimeType.includes("pdf")) {
+        try {
+          const pdfData = await pdfParse(file.buffer);
+          const extractedPdfText = (pdfData.text || "").trim();
+          if (extractedPdfText.length > 20) {
+            parts.push({ text: `Course Material File ("${file.originalname}") Text Content:\n\n${extractedPdfText.substring(0, 45000)}` });
+          } else {
+            const base64Data = file.buffer.toString("base64");
+            parts.push({
+              inlineData: {
+                data: base64Data,
+                mimeType: "application/pdf",
+              },
+            });
+          }
+        } catch (pdfErr) {
+          const base64Data = file.buffer.toString("base64");
+          parts.push({
+            inlineData: {
+              data: base64Data,
+              mimeType: "application/pdf",
+            },
+          });
+        }
       } else if (fnLower.endsWith(".txt") || mimeType.startsWith("text/")) {
         parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${file.buffer.toString("utf-8")}` });
       } else {
         const base64Data = file.buffer.toString("base64");
-        const safeMime = mimeType || (fnLower.endsWith(".pdf") ? "application/pdf" : "application/pdf");
+        const safeMime = mimeType || "image/jpeg";
         parts.push({
           inlineData: {
             data: base64Data,

@@ -584,7 +584,7 @@ export default function App() {
           <main
             className={`flex-1 min-w-0 w-full ${
               currentTab === "tutor"
-                ? "p-1.5 sm:p-2.5 md:p-3 flex flex-col h-full overflow-hidden"
+                ? "p-1 sm:p-2 md:p-3 pb-20 lg:pb-3 flex flex-col h-full overflow-hidden"
                 : "p-3 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-12 overflow-y-auto overflow-x-hidden h-full"
             } transition-all duration-300`}
           >

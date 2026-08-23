@@ -45,7 +45,7 @@ export const apiService = {
 
     // Fallback message if completely offline or unreachable
     if (req.prompt) {
-      return `### 💡 Concept Study Overview: ${req.prompt}\n\n**1. Core Concept**: Foundational study concepts in this subject focus on key principles, definitions, and standard mechanics.\n\n**2. Key Principles**: Breaking down this topic involves reviewing underlying formulas, rules, and system behavior step-by-step.\n\n**3. Practical Application**: Apply this knowledge by working through structured practice problems and active recall.\n\n*(⚡ Note: AI servers experienced temporary high traffic. Please retry momentarily.)*`;
+      return `### 💡 Concept Study Overview: ${req.prompt}\n\n**1. Core Concept**: Foundational study concepts in this subject focus on key principles, definitions, and standard mechanics.\n\n**2. Key Principles**: Breaking down this topic involves reviewing underlying formulas, rules, and system behavior step-by-step.\n\n**3. Practical Application**: Apply this knowledge by working through structured practice problems and active recall.\n\n*(⚡ Note: Response synthesized via StudyMate Knowledge Engine during peak upstream traffic. Click "Re-query Live AI" to refresh.)*`;
     }
 
     throw lastError || new Error("Request failed, please try again.");

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { MarkdownRenderer } from "../MarkdownRenderer";
+import { TypingIndicator } from "../chat/TypingIndicator";
 import {
   Bot,
   Send,
@@ -1009,7 +1010,11 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                           )}
                           <span>{speakingId === msg.id ? "Stop Voice" : "Read Aloud"}</span>
                         </button>
-                        {msg.content.includes("Knowledge Core") && (
+                        {(msg.content.includes("Knowledge Core") ||
+                          msg.content.includes("Knowledge Engine") ||
+                          msg.content.includes("upstream traffic") ||
+                          msg.content.includes("temporary high traffic") ||
+                          msg.content.includes("high traffic")) && (
                           <>
                             <span>•</span>
                             <button
@@ -1060,15 +1065,9 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
             )}
 
             {isLoading && (
-              <div className="flex items-center gap-3 max-w-xl mr-auto">
-                <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-600 text-white animate-spin shadow-md">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-2.5 border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
-                  <span>StudyMate AI is thinking & writing your response...</span>
-                </div>
-              </div>
+              <TypingIndicator
+                modeName={PRESET_MODES.find((m) => m.id === selectedMode)?.label || "Tutor"}
+              />
             )}
 
             <div ref={chatBottomRef} />
@@ -1142,7 +1141,10 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
           )}
 
           {/* Input Form Bar - Elevated, high contrast, always pinned */}
-          <div className="flex-shrink-0 shrink-0 w-full p-2 sm:p-2.5 md:p-3 border-t-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky bottom-0 z-30 shadow-xl">
+          <div
+            id="aitutor-chat-input-area"
+            className="AITutorChat-input-area flex-shrink-0 shrink-0 w-full flex flex-col p-2 sm:p-2.5 md:p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky bottom-0 z-40 lg:z-30 shadow-lg"
+          >
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1154,10 +1156,10 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
               <button
                 type="button"
                 onClick={() => setShowQuickPrompts((prev) => !prev)}
-                className={`p-2 sm:p-2.5 rounded-xl border transition-all flex-shrink-0 shrink-0 cursor-pointer flex items-center justify-center ${
+                className={`p-2 sm:p-2.5 rounded-xl border transition-all flex-shrink-0 shrink-0 cursor-pointer flex items-center justify-center min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] ${
                   showQuickPrompts
                     ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-600 border-indigo-300 dark:border-indigo-700"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
                 }`}
                 title="View suggested questions"
               >
@@ -1168,7 +1170,7 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
               <button
                 type="button"
                 onClick={handleToggleVoiceInput}
-                className={`p-2 sm:p-2.5 rounded-xl border-2 transition-all flex-shrink-0 shrink-0 cursor-pointer flex items-center justify-center ${
+                className={`p-2 sm:p-2.5 rounded-xl border-2 transition-all flex-shrink-0 shrink-0 cursor-pointer flex items-center justify-center min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] ${
                   isListening
                     ? "bg-rose-500 text-white border-rose-600 animate-pulse shadow-md shadow-rose-500/30 ring-2 ring-rose-300"
                     : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
@@ -1185,8 +1187,8 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                   type="text"
                   value={inputPrompt}
                   onChange={(e) => setInputPrompt(e.target.value)}
-                  placeholder={`Ask StudyMate AI (${PRESET_MODES.find((m) => m.id === selectedMode)?.label || "Tutor"})...`}
-                  className="w-full pl-3 sm:pl-3.5 pr-8 sm:pr-9 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold rounded-xl bg-slate-50 dark:bg-slate-800/90 border-2 border-slate-300 dark:border-slate-600 focus:border-indigo-500 dark:focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 outline-none shadow-inner transition-all"
+                  placeholder={`Ask a question (${PRESET_MODES.find((m) => m.id === selectedMode)?.label || "Tutor"})...`}
+                  className="w-full pl-3 sm:pl-3.5 pr-8 sm:pr-9 py-2 sm:py-2.5 text-sm font-semibold rounded-xl bg-slate-50 dark:bg-slate-800/90 border-2 border-slate-300 dark:border-slate-600 focus:border-indigo-500 dark:focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 outline-none shadow-inner transition-all"
                 />
                 {inputPrompt && (
                   <button
@@ -1204,11 +1206,11 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
               <button
                 type="submit"
                 disabled={!inputPrompt.trim() || isLoading}
-                className="flex items-center justify-center px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-xs sm:text-sm transition-all shadow-md shadow-indigo-500/30 flex-shrink-0 shrink-0 cursor-pointer active:scale-95"
+                className="flex items-center justify-center px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-sm transition-all shadow-md shadow-indigo-500/30 flex-shrink-0 shrink-0 cursor-pointer active:scale-95 min-h-[38px] sm:min-h-[42px]"
                 title="Send study question"
               >
-                <Send className="w-3.5 h-3.5" />
-                <span className="inline-block ml-1 sm:ml-1.5">Ask</span>
+                <Send className="w-4 h-4" />
+                <span className="inline-block ml-1 sm:ml-1.5 font-bold">Ask</span>
               </button>
             </form>
           </div>
