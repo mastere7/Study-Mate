@@ -8,6 +8,38 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      // Intercept and silence benign dev WebSocket / Vite HMR connection warnings in preview iframe
+      (function() {
+        function shouldSuppress(msg) {
+          if (!msg) return false;
+          var s = String(msg).toLowerCase();
+          return s.indexOf('websocket') !== -1 || 
+                 s.indexOf('closed without opened') !== -1 || 
+                 s.indexOf('closed without opening') !== -1 ||
+                 s.indexOf('failed to connect to websocket') !== -1;
+        }
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = e.reason;
+          var msg = (reason && (reason.message || reason.stack)) || (typeof reason === 'string' ? reason : '') || String(reason || '');
+          if (shouldSuppress(msg)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (e.stopPropagation) e.stopPropagation();
+          }
+        }, true);
+
+        window.addEventListener('error', function(e) {
+          var msg = e.message || (e.error && (e.error.message || e.error.stack)) || '';
+          if (shouldSuppress(msg)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (e.stopPropagation) e.stopPropagation();
+          }
+        }, true);
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
