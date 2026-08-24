@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { Bot, Sparkles, BrainCircuit } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
 
 interface TypingIndicatorProps {
   modeName?: string;
@@ -17,22 +16,23 @@ export const TypingIndicator: React.FC<TypingIndicatorProps> = ({
   modeName = "AI Tutor",
 }) => {
   const [statusIndex, setStatusIndex] = useState(0);
+  const [fade, setFade] = useState(true);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setStatusIndex((prev) => (prev + 1) % STATUS_MESSAGES.length);
+      setFade(false);
+      setTimeout(() => {
+        setStatusIndex((prev) => (prev + 1) % STATUS_MESSAGES.length);
+        setFade(true);
+      }, 200);
     }, 2800);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <motion.div
+    <div
       id="ai-typing-indicator"
-      initial={{ opacity: 0, y: 8, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -4, scale: 0.98 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-      className="flex items-start gap-2.5 sm:gap-3.5 max-w-3xl mr-auto group"
+      className="flex items-start gap-2.5 sm:gap-3.5 max-w-3xl mr-auto group animate-in fade-in duration-300"
     >
       {/* Bot Avatar */}
       <div
@@ -72,40 +72,32 @@ export const TypingIndicator: React.FC<TypingIndicatorProps> = ({
         <div className="flex items-center gap-3 pt-0.5">
           {/* 3 Staggered Bouncing Dots */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-900/50 shrink-0">
-            <motion.span
-              animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
-              transition={{ repeat: Infinity, duration: 0.8, ease: "easeInOut", delay: 0 }}
-              className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400 inline-block"
+            <span
+              className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400 inline-block animate-bounce"
+              style={{ animationDuration: "0.9s", animationDelay: "0ms" }}
             />
-            <motion.span
-              animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
-              transition={{ repeat: Infinity, duration: 0.8, ease: "easeInOut", delay: 0.2 }}
-              className="w-2 h-2 rounded-full bg-cyan-600 dark:bg-cyan-400 inline-block"
+            <span
+              className="w-2 h-2 rounded-full bg-cyan-600 dark:bg-cyan-400 inline-block animate-bounce"
+              style={{ animationDuration: "0.9s", animationDelay: "180ms" }}
             />
-            <motion.span
-              animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
-              transition={{ repeat: Infinity, duration: 0.8, ease: "easeInOut", delay: 0.4 }}
-              className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-indigo-300 inline-block"
+            <span
+              className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-indigo-300 inline-block animate-bounce"
+              style={{ animationDuration: "0.9s", animationDelay: "360ms" }}
             />
           </div>
 
           {/* Cycling Status Label */}
           <div className="h-5 overflow-hidden flex items-center min-w-0">
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={statusIndex}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.25 }}
-                className="text-xs text-slate-600 dark:text-slate-300 font-medium truncate"
-              >
-                {STATUS_MESSAGES[statusIndex]}
-              </motion.span>
-            </AnimatePresence>
+            <span
+              className={`text-xs text-slate-600 dark:text-slate-300 font-medium truncate transition-all duration-200 ${
+                fade ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+              }`}
+            >
+              {STATUS_MESSAGES[statusIndex]}
+            </span>
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 };

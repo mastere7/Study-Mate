@@ -12,7 +12,7 @@ export const apiService = {
   askAITutor: async (req: AITutorRequest): Promise<string> => {
     let lastError: any = null;
 
-    // Try up to 3 attempts with exponential backoff
+    // Try up to 3 attempts with backoff
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await fetch("/api/ai/tutor", {
@@ -31,24 +31,18 @@ export const apiService = {
         }
 
         const data = await res.json();
-        if (data.text) {
+        if (data && typeof data.text === "string" && data.text.trim()) {
           return data.text;
         }
       } catch (err: any) {
         lastError = err;
-        // If transient error, wait with exponential backoff before next try
         if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
         }
       }
     }
 
-    // Fallback message if completely offline or unreachable
-    if (req.prompt) {
-      return `### 💡 Concept Study Overview: ${req.prompt}\n\n**1. Core Concept**: Foundational study concepts in this subject focus on key principles, definitions, and standard mechanics.\n\n**2. Key Principles**: Breaking down this topic involves reviewing underlying formulas, rules, and system behavior step-by-step.\n\n**3. Practical Application**: Apply this knowledge by working through structured practice problems and active recall.\n\n*(⚡ Note: Response synthesized via StudyMate Knowledge Engine during peak upstream traffic. Click "Re-query Live AI" to refresh.)*`;
-    }
-
-    throw lastError || new Error("Request failed, please try again.");
+    throw lastError || new Error("Failed to get response from AI Tutor. Please try again.");
   },
 
   // 2. Document & PDF Analysis

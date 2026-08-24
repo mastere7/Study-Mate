@@ -40,7 +40,7 @@ function getGeminiAI() {
   });
 }
 
-// High-availability model list for study tasks (ordered by reliability for general text & Q&A)
+// High-availability model list for study tasks (ordered by reliability and rate-limit limits)
 const RESILIENT_MODELS = [
   "gemini-2.5-flash",
   "gemini-3.7-flash",
@@ -52,6 +52,60 @@ interface ResilienceOptions {
   contents: any;
   config?: any;
   primaryModel?: string;
+}
+
+// Helper to normalize multi-turn chat contents for Gemini API (must alternate user -> model and start with user)
+function normalizeChatContents(
+  history: { role: string; content: string }[] | undefined,
+  currentPrompt: string
+) {
+  const contents: { role: "user" | "model"; parts: { text: string }[] }[] = [];
+
+  if (Array.isArray(history)) {
+    for (const item of history) {
+      if (!item || typeof item.content !== "string") continue;
+      const text = item.content.trim();
+      if (!text) continue;
+
+      const role: "user" | "model" =
+        item.role === "assistant" || item.role === "model" ? "model" : "user";
+
+      if (contents.length === 0) {
+        // Gemini multi-turn chat MUST start with a 'user' turn
+        if (role === "user") {
+          contents.push({ role: "user", parts: [{ text }] });
+        }
+      } else {
+        const lastTurn = contents[contents.length - 1];
+        if (lastTurn.role === role) {
+          // Merge consecutive turns of same role to avoid Gemini 400 Invalid argument
+          lastTurn.parts[0].text += "\n\n" + text;
+        } else {
+          contents.push({ role, parts: [{ text }] });
+        }
+      }
+    }
+  }
+
+  const cleanPrompt = (currentPrompt || "").trim();
+  if (cleanPrompt) {
+    if (contents.length > 0 && contents[contents.length - 1].role === "user") {
+      // If last turn was user and identical, do not duplicate; otherwise append
+      const lastText = contents[contents.length - 1].parts[0].text;
+      if (lastText !== cleanPrompt) {
+        contents[contents.length - 1].parts[0].text += "\n\n" + cleanPrompt;
+      }
+    } else {
+      contents.push({ role: "user", parts: [{ text: cleanPrompt }] });
+    }
+  }
+
+  // Final validation: ensure at least one user message
+  if (contents.length === 0) {
+    contents.push({ role: "user", parts: [{ text: cleanPrompt || "Hello StudyMate" }] });
+  }
+
+  return contents;
 }
 
 // Generate intelligent structured academic study response if live AI encounters transient upstream high traffic
@@ -78,14 +132,14 @@ To illustrate this in practice, consider how this principle applies to real-worl
 - **Active Recall Checklist**: Test your understanding by explaining this concept in your own words without looking at reference notes.
 - **Study Tip**: Connect this concept to adjacent topics in ${subjName} to strengthen your mental schema.
 
-*(⚡ Note: Response synthesized via StudyMate Knowledge Engine during peak upstream traffic. Click "Re-query Live AI" below to instantly refresh via live Gemini models.)*`;
+*(⚡ Note: Response synthesized via StudyMate Knowledge Engine during peak upstream traffic. Click "Re-query Live AI" below to refresh via live Gemini models.)*`;
 }
 
 async function generateContentWithResilience(
   ai: GoogleGenAI,
   options: ResilienceOptions
 ) {
-  const primary = options.primaryModel || "gemini-3.7-flash";
+  const primary = options.primaryModel || "gemini-2.5-flash";
   const modelQueue = [
     primary,
     ...RESILIENT_MODELS.filter((m) => m !== primary),
@@ -115,6 +169,19 @@ async function generateContentWithResilience(
       } catch (err: any) {
         lastError = err;
         const msg = (err?.message || "").toLowerCase();
+
+        // Check if error is due to missing or invalid API key
+        if (
+          msg.includes("api_key") ||
+          msg.includes("api key") ||
+          msg.includes("unauthenticated") ||
+          msg.includes("401") ||
+          msg.includes("403") ||
+          msg.includes("permission_denied")
+        ) {
+          console.error(`[Gemini API Auth Error] API Key issue: ${err.message}`);
+          throw new Error("GEMINI_API_KEY is missing or invalid in your deployed environment settings. Please configure GEMINI_API_KEY in your hosting environment.");
+        }
 
         // If it's a 503, 429, rate limit, or high traffic error, wait and retry or switch models
         const isTransient =
@@ -183,15 +250,8 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks (if 
       systemInstruction += ` The context for this query is the subject: ${subject}.`;
     }
 
-    // Build contents array with history if provided
-    let contents: any = [];
-    if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
-      contents = conversationHistory.map((item: any) => ({
-        role: item.role === "user" ? "user" : "model",
-        parts: [{ text: item.content }],
-      }));
-    }
-    contents.push({ role: "user", parts: [{ text: prompt }] });
+    // Build properly formatted alternating contents array for Gemini
+    const contents = normalizeChatContents(conversationHistory, prompt);
 
     try {
       const response = await generateContentWithResilience(ai, {

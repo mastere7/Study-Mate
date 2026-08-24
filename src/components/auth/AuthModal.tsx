@@ -14,6 +14,10 @@ import {
   CheckCircle2,
   Send,
   Camera,
+  Copy,
+  ExternalLink,
+  Globe,
+  ShieldAlert,
 } from "lucide-react";
 import { UserProfile } from "../../types";
 import { storageService } from "../../services/storage";
@@ -67,6 +71,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [registeredEmailSent, setRegisteredEmailSent] = useState<string | null>(null);
+  const [showDomainHelper, setShowDomainHelper] = useState(false);
+  const [domainCopied, setDomainCopied] = useState(false);
+
+  const currentHostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const isInsideIframe = typeof window !== "undefined" && window.self !== window.top;
 
   useEffect(() => {
     if (isOpen) {
@@ -77,6 +86,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setStudyGoal(currentUser.studyGoal || "");
       setErrorMessage(null);
       setSuccessMessage(null);
+      setShowDomainHelper(false);
       if (auth.currentUser) {
         setActiveTab("profile");
       } else {
@@ -91,18 +101,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage(null);
     setSuccessMessage(null);
     setRegisteredEmailSent(null);
+    setShowDomainHelper(false);
+  };
+
+  const copyCurrentDomain = () => {
+    if (currentHostname) {
+      navigator.clipboard.writeText(currentHostname);
+      setDomainCopied(true);
+      setTimeout(() => setDomainCopied(false), 2500);
+    }
+  };
+
+  const openAppInNewTab = () => {
+    if (typeof window !== "undefined") {
+      window.open(window.location.href, "_blank");
+    }
   };
 
   const parseFirebaseError = (err: any): string => {
     const code = err?.code || "";
     if (code === "auth/operation-not-allowed") {
-      return "The requested sign-in provider (Google or Email/Password) is disabled in your Firebase project. Enable it in the Firebase Console (Authentication > Sign-in method).";
+      return "Google Sign-In is disabled in your Firebase Console. Go to Authentication > Sign-in method > Google and click 'Enable'.";
     }
     if (code === "auth/unauthorized-domain") {
-      return "This domain is not authorized for OAuth/Google Sign-In yet. In the Firebase Console, navigate to Authentication > Settings > Authorized Domains and add this domain.";
+      setShowDomainHelper(true);
+      return `This domain (${currentHostname}) is not yet added to Firebase Authorized Domains. Add "${currentHostname}" in your Firebase Console under Authentication > Settings > Authorized domains.`;
     }
-    if (code === "auth/popup-blocked") {
-      return "The Google Sign-In popup was blocked by your browser. Please allow popups or open the app in a new tab.";
+    if (code === "auth/popup-blocked" || code === "auth/cancelled-popup-request") {
+      setShowDomainHelper(true);
+      return "The Google Sign-In popup was blocked by your browser or iframe security. Click 'Open in New Tab' below to sign in cleanly.";
     }
     if (code === "auth/email-already-in-use") return "This email is already registered. Please Sign In.";
     if (code === "auth/invalid-email") return "Please enter a valid email address.";
@@ -393,9 +420,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Feedback Alerts */}
         {errorMessage && (
-          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-medium animate-in fade-in">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{errorMessage}</span>
+          <div className="space-y-2">
+            <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-medium animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
+            </div>
+
+            {showDomainHelper && (
+              <div className="p-3.5 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-200 space-y-2.5 animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <p className="font-bold text-xs">Authorize Domain in Firebase Console</p>
+                </div>
+                <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                  Firebase Google Sign-In requires your domain to be in the authorized domains list.
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 text-[11px] font-mono select-all overflow-x-auto truncate">
+                    {currentHostname}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copyCurrentDomain}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors shrink-0 cursor-pointer shadow-xs"
+                  >
+                    {domainCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{domainCopied ? "Copied!" : "Copy Domain"}</span>
+                  </button>
+                </div>
+
+                <div className="pt-1 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openAppInNewTab}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-bold transition-all shadow-xs cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Open in Standalone Tab</span>
+                  </button>
+                  <span className="text-[10px] text-amber-700 dark:text-amber-400">
+                    (Direct tab bypasses iframe popup blockers)
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {successMessage && (
