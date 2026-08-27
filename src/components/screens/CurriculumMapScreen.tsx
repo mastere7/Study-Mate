@@ -45,7 +45,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { Subject, TopicNode, TopicEdge, TopicNodeStatus, SubTopicItem, SubTopicStatus, RoadmapBadge } from "../../types";
-import { storageService, DEFAULT_TOPIC_NODES, DEFAULT_TOPIC_EDGES } from "../../services/storage";
+import { storageService, subscribeToStorageChanges, KEYS, DEFAULT_TOPIC_NODES, DEFAULT_TOPIC_EDGES } from "../../services/storage";
 import { audioSynth } from "../../services/audioSynth";
 
 interface CurriculumMapScreenProps {
@@ -145,22 +145,6 @@ export const CurriculumMapScreen: React.FC<CurriculumMapScreenProps> = ({
     activeSubjectFilter || "all"
   );
 
-  // Sync selectedSubjectId if activeSubjectFilter prop changes
-  useEffect(() => {
-    if (activeSubjectFilter) {
-      setSelectedSubjectId(activeSubjectFilter);
-    }
-  }, [activeSubjectFilter]);
-
-  // Save to storage on state change
-  useEffect(() => {
-    storageService.saveTopicNodes(nodes);
-  }, [nodes]);
-
-  useEffect(() => {
-    storageService.saveTopicEdges(edges);
-  }, [edges]);
-
   // 2. Interactive Canvas State
   const [zoom, setZoom] = useState<number>(1.0);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 40, y: 40 });
@@ -213,6 +197,36 @@ export const CurriculumMapScreen: React.FC<CurriculumMapScreenProps> = ({
 
   // Canvas Reference
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Sync selectedSubjectId if activeSubjectFilter prop changes
+  useEffect(() => {
+    if (activeSubjectFilter) {
+      setSelectedSubjectId(activeSubjectFilter);
+    }
+  }, [activeSubjectFilter]);
+
+  // Save to storage on state change
+  useEffect(() => {
+    storageService.saveTopicNodes(nodes);
+  }, [nodes]);
+
+  useEffect(() => {
+    storageService.saveTopicEdges(edges);
+  }, [edges]);
+
+  // Reactive subscription: update nodes, edges, and badges when cloud sync updates storage
+  useEffect(() => {
+    const unsubscribe = subscribeToStorageChanges((key, data) => {
+      if (key === KEYS.TOPIC_NODES && Array.isArray(data)) {
+        setNodes(data);
+      } else if (key === KEYS.TOPIC_EDGES && Array.isArray(data)) {
+        setEdges(data);
+      } else if (key === KEYS.ROADMAP_BADGES && Array.isArray(data)) {
+        setUnlockedBadges(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Filtered Nodes & Edges
   const filteredNodes = useMemo(() => {

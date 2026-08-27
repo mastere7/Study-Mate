@@ -20,7 +20,7 @@ import {
 } from "../types";
 
 // Keys for local storage
-const KEYS = {
+export const KEYS = {
   USER: "studymate_user",
   SUBJECTS: "studymate_subjects",
   NOTES: "studymate_notes",
@@ -40,6 +40,44 @@ const KEYS = {
   ACTIVITIES: "studymate_activities",
   THEME: "studymate_theme",
   STREAK: "studymate_streak",
+};
+
+// Firestore Sync Bridge and Reactive Storage Subscriptions
+type FirestoreSyncCallback = (collectionName: string, data: any) => void;
+let syncBridge: FirestoreSyncCallback | null = null;
+
+export const registerFirestoreSyncBridge = (callback: FirestoreSyncCallback) => {
+  syncBridge = callback;
+};
+
+const notifyFirestore = (collectionName: string, data: any) => {
+  if (syncBridge) {
+    try {
+      syncBridge(collectionName, data);
+    } catch (err) {
+      console.warn(`Firestore background sync error for ${collectionName}:`, err);
+    }
+  }
+};
+
+type StorageChangeListener = (key: string, data: any) => void;
+const storageListeners = new Set<StorageChangeListener>();
+
+export const subscribeToStorageChanges = (listener: StorageChangeListener) => {
+  storageListeners.add(listener);
+  return () => {
+    storageListeners.delete(listener);
+  };
+};
+
+const notifyStorageListeners = (key: string, data: any) => {
+  storageListeners.forEach((l) => {
+    try {
+      l(key, data);
+    } catch (err) {
+      console.warn("Storage listener error:", err);
+    }
+  });
 };
 
 // Default User (Guest / Unauthenticated initially)
@@ -96,6 +134,8 @@ export const storageService = {
   },
   saveUser: (user: User) => {
     localStorage.setItem(KEYS.USER, JSON.stringify(user));
+    notifyStorageListeners(KEYS.USER, user);
+    notifyFirestore("user", user);
   },
 
   getSubjects: (): Subject[] => {
@@ -120,9 +160,13 @@ export const storageService = {
   },
   saveSubjects: (subjects: Subject[]) => {
     localStorage.setItem(KEYS.SUBJECTS, JSON.stringify(subjects));
+    notifyStorageListeners(KEYS.SUBJECTS, subjects);
+    notifyFirestore("subjects", subjects);
   },
   clearSubjects: () => {
     localStorage.removeItem(KEYS.SUBJECTS);
+    notifyStorageListeners(KEYS.SUBJECTS, []);
+    notifyFirestore("subjects", []);
   },
 
   getNotes: (): Note[] => {
@@ -150,6 +194,8 @@ export const storageService = {
       return !titleLower.includes("wireshark") && !titleLower.includes("whireshirk") && !titleLower.includes("wireshirk");
     });
     localStorage.setItem(KEYS.NOTES, JSON.stringify(cleaned));
+    notifyStorageListeners(KEYS.NOTES, cleaned);
+    notifyFirestore("notes", cleaned);
   },
 
   getDocuments: (): DocumentItem[] => {
@@ -177,6 +223,8 @@ export const storageService = {
       return !titleLower.includes("wireshark") && !titleLower.includes("whireshirk") && !fileLower.includes("wireshark");
     });
     localStorage.setItem(KEYS.DOCUMENTS, JSON.stringify(cleaned));
+    notifyStorageListeners(KEYS.DOCUMENTS, cleaned);
+    notifyFirestore("documents", cleaned);
   },
 
   getAssignments: (): Assignment[] => {
@@ -197,6 +245,8 @@ export const storageService = {
   },
   saveAssignments: (assignments: Assignment[]) => {
     localStorage.setItem(KEYS.ASSIGNMENTS, JSON.stringify(assignments));
+    notifyStorageListeners(KEYS.ASSIGNMENTS, assignments);
+    notifyFirestore("assignments", assignments);
   },
 
   getSchedules: (): StudySchedule[] => {
@@ -205,6 +255,8 @@ export const storageService = {
   },
   saveSchedules: (schedules: StudySchedule[]) => {
     localStorage.setItem(KEYS.SCHEDULES, JSON.stringify(schedules));
+    notifyStorageListeners(KEYS.SCHEDULES, schedules);
+    notifyFirestore("schedules", schedules);
   },
 
   getQuizzes: (): Quiz[] => {
@@ -213,6 +265,8 @@ export const storageService = {
   },
   saveQuizzes: (quizzes: Quiz[]) => {
     localStorage.setItem(KEYS.QUIZZES, JSON.stringify(quizzes));
+    notifyStorageListeners(KEYS.QUIZZES, quizzes);
+    notifyFirestore("quizzes", quizzes);
   },
 
   getFlashcards: (): FlashcardDeck[] => {
@@ -225,9 +279,13 @@ export const storageService = {
   },
   saveFlashcards: (decks: FlashcardDeck[]) => {
     localStorage.setItem(KEYS.FLASHCARD_DECKS, JSON.stringify(decks));
+    notifyStorageListeners(KEYS.FLASHCARD_DECKS, decks);
+    notifyFirestore("decks", decks);
   },
   saveDecks: (decks: FlashcardDeck[]) => {
     localStorage.setItem(KEYS.FLASHCARD_DECKS, JSON.stringify(decks));
+    notifyStorageListeners(KEYS.FLASHCARD_DECKS, decks);
+    notifyFirestore("decks", decks);
   },
 
   getNotifications: (): AppNotification[] => {
@@ -248,6 +306,8 @@ export const storageService = {
   },
   saveNotifications: (notifs: AppNotification[]) => {
     localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(notifs));
+    notifyStorageListeners(KEYS.NOTIFICATIONS, notifs);
+    notifyFirestore("notifications", notifs);
   },
 
   getPomodoroSessions: (): PomodoroSession[] => {
@@ -260,9 +320,13 @@ export const storageService = {
   },
   savePomodoroSessions: (sessions: PomodoroSession[]) => {
     localStorage.setItem(KEYS.POMODORO_SESSIONS, JSON.stringify(sessions));
+    notifyStorageListeners(KEYS.POMODORO_SESSIONS, sessions);
+    notifyFirestore("sessions", sessions);
   },
   saveSessions: (sessions: PomodoroSession[]) => {
     localStorage.setItem(KEYS.POMODORO_SESSIONS, JSON.stringify(sessions));
+    notifyStorageListeners(KEYS.POMODORO_SESSIONS, sessions);
+    notifyFirestore("sessions", sessions);
   },
 
   getStudyLogs: (): DailyStudyLog[] => {
@@ -271,6 +335,8 @@ export const storageService = {
   },
   saveStudyLogs: (logs: DailyStudyLog[]) => {
     localStorage.setItem(KEYS.STUDY_LOGS, JSON.stringify(logs));
+    notifyStorageListeners(KEYS.STUDY_LOGS, logs);
+    notifyFirestore("studyLogs", logs);
   },
 
   getGroupSessions: (): GroupStudySession[] => {
@@ -306,9 +372,11 @@ export const storageService = {
       return !titleLower.includes("wireshark") && !titleLower.includes("whireshirk") && !descLower.includes("wireshark");
     });
     localStorage.setItem(KEYS.GROUP_SESSIONS, JSON.stringify(cleaned));
+    notifyStorageListeners(KEYS.GROUP_SESSIONS, cleaned);
   },
   clearGroupSessions: () => {
     localStorage.removeItem(KEYS.GROUP_SESSIONS);
+    notifyStorageListeners(KEYS.GROUP_SESSIONS, []);
   },
 
   getTopicNodes: (): TopicNode[] => {
@@ -317,6 +385,8 @@ export const storageService = {
   },
   saveTopicNodes: (nodes: TopicNode[]) => {
     localStorage.setItem(KEYS.TOPIC_NODES, JSON.stringify(nodes));
+    notifyStorageListeners(KEYS.TOPIC_NODES, nodes);
+    notifyFirestore("topicNodes", nodes);
   },
 
   getTopicEdges: (): TopicEdge[] => {
@@ -325,6 +395,8 @@ export const storageService = {
   },
   saveTopicEdges: (edges: TopicEdge[]) => {
     localStorage.setItem(KEYS.TOPIC_EDGES, JSON.stringify(edges));
+    notifyStorageListeners(KEYS.TOPIC_EDGES, edges);
+    notifyFirestore("topicEdges", edges);
   },
 
   getChatSessions: (): AIChatSession[] => {
@@ -333,6 +405,8 @@ export const storageService = {
   },
   saveChatSessions: (sessions: AIChatSession[]) => {
     localStorage.setItem(KEYS.CHAT_SESSIONS, JSON.stringify(sessions));
+    notifyStorageListeners(KEYS.CHAT_SESSIONS, sessions);
+    notifyFirestore("chatSessions", sessions);
   },
 
   getUnlockedBadges: (): RoadmapBadge[] => {
@@ -349,6 +423,8 @@ export const storageService = {
   },
   saveUnlockedBadges: (badges: RoadmapBadge[]) => {
     localStorage.setItem(KEYS.ROADMAP_BADGES, JSON.stringify(badges));
+    notifyStorageListeners(KEYS.ROADMAP_BADGES, badges);
+    notifyFirestore("roadmapBadges", badges);
   },
   saveRoadmapBadges: (badges: RoadmapBadge[]) => {
     storageService.saveUnlockedBadges(badges);
@@ -385,7 +461,10 @@ export const storageService = {
       const descLower = (a.description || "").toLowerCase();
       return !titleLower.includes("wireshark") && !titleLower.includes("whireshirk") && !descLower.includes("wireshark");
     });
-    localStorage.setItem(KEYS.ACTIVITIES, JSON.stringify(cleaned.slice(0, 50)));
+    const limited = cleaned.slice(0, 50);
+    localStorage.setItem(KEYS.ACTIVITIES, JSON.stringify(limited));
+    notifyStorageListeners(KEYS.ACTIVITIES, limited);
+    notifyFirestore("activities", limited);
   },
   addActivity: (item: Omit<ActivityItem, "id" | "timestamp">) => {
     const data = localStorage.getItem(KEYS.ACTIVITIES);
@@ -397,6 +476,8 @@ export const storageService = {
     };
     const updated = [newActivity, ...existing].slice(0, 50);
     localStorage.setItem(KEYS.ACTIVITIES, JSON.stringify(updated));
+    notifyStorageListeners(KEYS.ACTIVITIES, updated);
+    notifyFirestore("activities", updated);
     return updated;
   },
 

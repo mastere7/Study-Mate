@@ -18,6 +18,20 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+// Enable CORS and preflight handling
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // Configure file uploads with multer
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -215,6 +229,10 @@ app.get("/api/health", (req, res) => {
 });
 
 // 1. AI Tutor Assistant API
+app.get("/api/ai/tutor", (req, res) => {
+  res.json({ status: "ok", endpoint: "/api/ai/tutor", method: "POST" });
+});
+
 app.post("/api/ai/tutor", async (req, res) => {
   try {
     const { prompt, mode, subject, conversationHistory } = req.body;

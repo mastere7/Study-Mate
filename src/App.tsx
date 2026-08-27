@@ -285,6 +285,30 @@ export default function App() {
             setNotifications(data.notifications);
             storageService.saveNotifications(data.notifications);
           }
+
+          if (data.topicNodes && data.topicNodes.length > 0) {
+            storageService.saveTopicNodes(data.topicNodes);
+          }
+
+          if (data.topicEdges && data.topicEdges.length > 0) {
+            storageService.saveTopicEdges(data.topicEdges);
+          }
+
+          if (data.chatSessions && data.chatSessions.length > 0) {
+            storageService.saveChatSessions(data.chatSessions);
+          }
+
+          if (data.roadmapBadges && data.roadmapBadges.length > 0) {
+            storageService.saveUnlockedBadges(data.roadmapBadges);
+          }
+
+          if (data.activities && data.activities.length > 0) {
+            storageService.saveActivities(data.activities);
+          }
+
+          if (data.studyLogs && data.studyLogs.length > 0) {
+            storageService.saveStudyLogs(data.studyLogs);
+          }
         }
       } else {
         setIsFirebaseAuthenticated(false);

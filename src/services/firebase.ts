@@ -42,6 +42,7 @@ import {
   TopicEdge,
   AIChatSession,
   RoadmapBadge,
+  ActivityItem,
   GroupStudySession,
 } from "../types";
 import {
@@ -55,6 +56,7 @@ import {
   DEFAULT_TOPIC_EDGES,
   DEFAULT_CHAT_SESSIONS,
   storageService,
+  registerFirestoreSyncBridge,
 } from "./storage";
 
 export { onAuthStateChanged };
@@ -69,6 +71,36 @@ export const googleProvider = new GoogleAuthProvider();
 export const db = firebaseConfig.firestoreDatabaseId
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
   : getFirestore(app);
+
+// Safe object sanitizer for Firestore (converts undefined to null / strips non-serializable fields)
+const sanitizeForFirestore = (obj: any): any => {
+  if (!obj || typeof obj !== "object") return obj;
+  return JSON.parse(
+    JSON.stringify(obj, (key, value) => (value === undefined ? null : value))
+  );
+};
+
+// Register automatic sync bridge: whenever any storageService.save* is invoked anywhere in the app,
+// it is automatically uploaded to the registered user's Firestore document/subcollection!
+registerFirestoreSyncBridge((collectionName: string, data: any) => {
+  if (!auth.currentUser) return;
+  const uid = auth.currentUser.uid;
+  if (collectionName === "user") {
+    syncUserDoc(uid, data);
+  } else if (collectionName === "studyLogs") {
+    const logs = Array.isArray(data) ? data : [data];
+    const batch = writeBatch(db);
+    for (const log of logs) {
+      if (log && log.date) {
+        batch.set(doc(db, "users", uid, "studyLogs", log.date), sanitizeForFirestore(log), { merge: true });
+      }
+    }
+    batch.commit().catch((e) => console.warn("Background studyLogs sync deferred:", e));
+  } else {
+    const items = Array.isArray(data) ? data : [data];
+    syncFullCollection(uid, collectionName, items);
+  }
+});
 
 // Safe network fetch helpers to prevent offline/network-request errors from crashing UI
 const safeGetDoc = async (docRef: any) => {
@@ -89,6 +121,69 @@ const safeGetDocs = async (colRef: any) => {
   }
 };
 
+// Migrate guest / local storage creations to user's registered Firestore account
+export const migrateLocalDataToFirestore = async (userId: string) => {
+  if (!userId) return;
+  try {
+    const subjects = storageService.getSubjects();
+    const notes = storageService.getNotes();
+    const docs = storageService.getDocuments();
+    const assignments = storageService.getAssignments();
+    const schedules = storageService.getSchedules();
+    const quizzes = storageService.getQuizzes();
+    const decks = storageService.getDecks();
+    const sessions = storageService.getSessions();
+    const topicNodes = storageService.getTopicNodes();
+    const topicEdges = storageService.getTopicEdges();
+    const chatSessions = storageService.getChatSessions();
+    const roadmapBadges = storageService.getRoadmapBadges();
+    const studyLogs = storageService.getStudyLogs();
+    const activities = storageService.getActivities();
+
+    const batch = writeBatch(db);
+    let count = 0;
+
+    const addToBatch = (colName: string, items: any[]) => {
+      for (const item of items) {
+        if (item && item.id) {
+          const ref = doc(db, "users", userId, colName, item.id);
+          batch.set(ref, sanitizeForFirestore({ ...item, userId }), { merge: true });
+          count++;
+        }
+      }
+    };
+
+    if (subjects.length > 0) addToBatch("subjects", subjects);
+    if (notes.length > 0) addToBatch("notes", notes);
+    if (docs.length > 0) addToBatch("documents", docs);
+    if (assignments.length > 0) addToBatch("assignments", assignments);
+    if (schedules.length > 0) addToBatch("schedules", schedules);
+    if (quizzes.length > 0) addToBatch("quizzes", quizzes);
+    if (decks.length > 0) addToBatch("decks", decks);
+    if (sessions.length > 0) addToBatch("sessions", sessions);
+    if (topicNodes.length > 0) addToBatch("topicNodes", topicNodes);
+    if (topicEdges.length > 0) addToBatch("topicEdges", topicEdges);
+    if (chatSessions.length > 0) addToBatch("chatSessions", chatSessions);
+    if (roadmapBadges.length > 0) addToBatch("roadmapBadges", roadmapBadges);
+    if (activities.length > 0) addToBatch("activities", activities);
+
+    for (const log of studyLogs) {
+      if (log && log.date) {
+        const ref = doc(db, "users", userId, "studyLogs", log.date);
+        batch.set(ref, sanitizeForFirestore(log), { merge: true });
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      await batch.commit();
+      console.log(`Successfully migrated ${count} local items to Firestore for user: ${userId}`);
+    }
+  } catch (err) {
+    console.warn("Could not migrate local items to Firestore:", err);
+  }
+};
+
 // Authentication Helpers
 export const registerWithEmail = async (email: string, pass: string, name: string, gradeLevel?: string, major?: string) => {
   const cred = await createUserWithEmailAndPassword(auth, email, pass);
@@ -103,26 +198,28 @@ export const registerWithEmail = async (email: string, pass: string, name: strin
     console.warn("Could not send initial verification email:", err);
   }
 
+  const existingLocalUser = storageService.getUser();
   const newUserProfile: User = {
     id: cred.user.uid,
-    name: name || email.split("@")[0],
+    name: name || existingLocalUser.name || email.split("@")[0],
     email: email,
-    avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || email)}`,
-    gradeLevel: gradeLevel || "Undergraduate Student",
-    major: major || "General Studies",
+    avatarUrl: existingLocalUser.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || email)}`,
+    gradeLevel: gradeLevel || existingLocalUser.gradeLevel || "Undergraduate Student",
+    major: major || existingLocalUser.major || "General Studies",
+    studyGoal: existingLocalUser.studyGoal || undefined,
     createdDate: new Date().toISOString(),
-    dailyGoalHours: 3.0,
-    notificationSound: true,
-    reminderFrequency: "15m",
-    quietHoursStart: "23:00",
-    quietHoursEnd: "07:00",
-    themePreference: "system",
+    dailyGoalHours: existingLocalUser.dailyGoalHours > 0 ? existingLocalUser.dailyGoalHours : 3.0,
+    notificationSound: existingLocalUser.notificationSound !== undefined ? existingLocalUser.notificationSound : true,
+    reminderFrequency: existingLocalUser.reminderFrequency || "15m",
+    quietHoursStart: existingLocalUser.quietHoursStart || "23:00",
+    quietHoursEnd: existingLocalUser.quietHoursEnd || "07:00",
+    themePreference: existingLocalUser.themePreference || "system",
   };
 
   // Save profile to firestore
-  await setDoc(doc(db, "users", cred.user.uid), newUserProfile);
-  // Seed initial starter data for the new user
-  await seedInitialUserData(cred.user.uid);
+  await setDoc(doc(db, "users", cred.user.uid), sanitizeForFirestore(newUserProfile));
+  // Preserve and upload any local guest creations, or seed starter data
+  await migrateLocalDataToFirestore(cred.user.uid);
 
   return newUserProfile;
 };
@@ -137,6 +234,8 @@ export const sendVerificationEmail = async () => {
 
 export const loginWithEmail = async (email: string, pass: string) => {
   const cred = await signInWithEmailAndPassword(auth, email, pass);
+  // Seamlessly sync any local unpushed items on login
+  migrateLocalDataToFirestore(cred.user.uid);
   return cred.user;
 };
 
@@ -147,23 +246,27 @@ export const loginWithGoogle = async () => {
   const isNewAccount = !userSnap.exists();
 
   if (isNewAccount) {
+    const existingLocalUser = storageService.getUser();
     const newUserProfile: User = {
       id: cred.user.uid,
-      name: cred.user.displayName || "Student",
+      name: cred.user.displayName || existingLocalUser.name || "Student",
       email: cred.user.email || "",
-      avatarUrl: cred.user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cred.user.displayName || "Student")}`,
-      gradeLevel: "Undergraduate Student",
-      major: "General Studies",
+      avatarUrl: cred.user.photoURL || existingLocalUser.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cred.user.displayName || "Student")}`,
+      gradeLevel: existingLocalUser.gradeLevel || "Undergraduate Student",
+      major: existingLocalUser.major || "General Studies",
+      studyGoal: existingLocalUser.studyGoal || undefined,
       createdDate: new Date().toISOString(),
-      dailyGoalHours: 3.0,
+      dailyGoalHours: existingLocalUser.dailyGoalHours > 0 ? existingLocalUser.dailyGoalHours : 3.0,
       notificationSound: true,
       reminderFrequency: "15m",
       quietHoursStart: "23:00",
       quietHoursEnd: "07:00",
       themePreference: "system",
     };
-    await setDoc(userDocRef, newUserProfile);
-    await seedInitialUserData(cred.user.uid);
+    await setDoc(userDocRef, sanitizeForFirestore(newUserProfile));
+    await migrateLocalDataToFirestore(cred.user.uid);
+  } else {
+    migrateLocalDataToFirestore(cred.user.uid);
   }
 
   return { user: cred.user, isNewAccount };
@@ -185,49 +288,49 @@ export const seedInitialUserData = async (userId: string) => {
     // Seed Subjects
     for (const sub of DEFAULT_SUBJECTS) {
       const ref = doc(db, "users", userId, "subjects", sub.id);
-      batch.set(ref, sub);
+      batch.set(ref, sanitizeForFirestore(sub));
     }
 
     // Seed Notes
     for (const note of DEFAULT_NOTES) {
       const ref = doc(db, "users", userId, "notes", note.id);
-      batch.set(ref, { ...note, userId });
+      batch.set(ref, sanitizeForFirestore({ ...note, userId }));
     }
 
     // Seed Assignments
     for (const a of DEFAULT_ASSIGNMENTS) {
       const ref = doc(db, "users", userId, "assignments", a.id);
-      batch.set(ref, { ...a, userId });
+      batch.set(ref, sanitizeForFirestore({ ...a, userId }));
     }
 
     // Seed Schedules
     for (const s of DEFAULT_SCHEDULES) {
       const ref = doc(db, "users", userId, "schedules", s.id);
-      batch.set(ref, { ...s, userId });
+      batch.set(ref, sanitizeForFirestore({ ...s, userId }));
     }
 
     // Seed Flashcards
     for (const d of DEFAULT_FLASHCARDS) {
       const ref = doc(db, "users", userId, "decks", d.id);
-      batch.set(ref, { ...d, userId });
+      batch.set(ref, sanitizeForFirestore({ ...d, userId }));
     }
 
     // Seed Topic Nodes
     for (const tn of DEFAULT_TOPIC_NODES) {
       const ref = doc(db, "users", userId, "topicNodes", tn.id);
-      batch.set(ref, tn);
+      batch.set(ref, sanitizeForFirestore(tn));
     }
 
     // Seed Topic Edges
     for (const te of DEFAULT_TOPIC_EDGES) {
       const ref = doc(db, "users", userId, "topicEdges", te.id);
-      batch.set(ref, te);
+      batch.set(ref, sanitizeForFirestore(te));
     }
 
     // Seed Notifications
     for (const n of DEFAULT_NOTIFICATIONS) {
       const ref = doc(db, "users", userId, "notifications", n.id);
-      batch.set(ref, { ...n, userId });
+      batch.set(ref, sanitizeForFirestore({ ...n, userId }));
     }
 
     await batch.commit();
@@ -259,6 +362,7 @@ export const fetchUserData = async (userId: string) => {
       chatSessionsSnap,
       logsSnap,
       badgesSnap,
+      activitiesSnap,
     ] = await Promise.all([
       safeGetDocs(collection(db, "users", userId, "subjects")),
       safeGetDocs(collection(db, "users", userId, "notes")),
@@ -274,9 +378,10 @@ export const fetchUserData = async (userId: string) => {
       safeGetDocs(collection(db, "users", userId, "chatSessions")),
       safeGetDocs(collection(db, "users", userId, "studyLogs")),
       safeGetDocs(collection(db, "users", userId, "roadmapBadges")),
+      safeGetDocs(collection(db, "users", userId, "activities")),
     ]);
 
-    return {
+    const result = {
       profile: profile || storageService.getUser(),
       subjects: subjectsSnap && subjectsSnap.docs.length > 0
         ? subjectsSnap.docs.map((d) => d.data() as Subject)
@@ -320,7 +425,12 @@ export const fetchUserData = async (userId: string) => {
       roadmapBadges: badgesSnap && badgesSnap.docs.length > 0
         ? badgesSnap.docs.map((d) => d.data() as RoadmapBadge)
         : storageService.getRoadmapBadges(),
+      activities: activitiesSnap && activitiesSnap.docs.length > 0
+        ? activitiesSnap.docs.map((d) => d.data() as ActivityItem)
+        : storageService.getActivities(),
     };
+
+    return result;
   } catch (err: any) {
     console.warn("Firestore operating in offline/local cache mode:", err?.message || err);
     return {
@@ -339,6 +449,7 @@ export const fetchUserData = async (userId: string) => {
       chatSessions: storageService.getChatSessions(),
       studyLogs: storageService.getStudyLogs(),
       roadmapBadges: storageService.getRoadmapBadges(),
+      activities: storageService.getActivities(),
     };
   }
 };
@@ -346,7 +457,7 @@ export const fetchUserData = async (userId: string) => {
 // Generic Firestore Sync Helpers
 export const syncUserDoc = async (userId: string, data: Partial<User>) => {
   try {
-    await setDoc(doc(db, "users", userId), data, { merge: true });
+    await setDoc(doc(db, "users", userId), sanitizeForFirestore(data), { merge: true });
   } catch (err) {
     console.warn("Firestore profile sync deferred (offline/cached):", err);
   }
@@ -354,7 +465,7 @@ export const syncUserDoc = async (userId: string, data: Partial<User>) => {
 
 export const syncItemToFirestore = async (userId: string, collectionName: string, itemId: string, data: any) => {
   try {
-    await setDoc(doc(db, "users", userId, collectionName, itemId), data, { merge: true });
+    await setDoc(doc(db, "users", userId, collectionName, itemId), sanitizeForFirestore(data), { merge: true });
   } catch (err) {
     console.warn(`Firestore ${collectionName}/${itemId} sync deferred (offline/cached):`, err);
   }
@@ -372,9 +483,9 @@ export const syncFullCollection = async (userId: string, collectionName: string,
   try {
     const batch = writeBatch(db);
     for (const item of items) {
-      if (item.id) {
+      if (item && item.id) {
         const ref = doc(db, "users", userId, collectionName, item.id);
-        batch.set(ref, item, { merge: true });
+        batch.set(ref, sanitizeForFirestore({ ...item, userId }), { merge: true });
       }
     }
     await batch.commit();

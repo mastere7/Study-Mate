@@ -44,7 +44,7 @@ import {
   Copy,
 } from "lucide-react";
 import { UserProfile, Subject, Note, Assignment, StudySchedule, Quiz, ActivityItem, PriorityLevel, TaskStatus, GroupStudySession } from "../../types";
-import { storageService } from "../../services/storage";
+import { storageService, subscribeToStorageChanges, KEYS } from "../../services/storage";
 import { User as UserIcon, GraduationCap } from "lucide-react";
 
 export interface StudyTip {
@@ -252,6 +252,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   useEffect(() => {
     setActivities(storageService.getActivities());
   }, [assignments.length, notes.length, quizzes.length, user.dailyGoalHours]);
+
+  // Reactive subscription: live updates to activities when cloud sync changes
+  useEffect(() => {
+    const unsubscribe = subscribeToStorageChanges((key, data) => {
+      if (key === KEYS.ACTIVITIES && Array.isArray(data)) {
+        setActivities(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleCreateDeadline = (e: React.FormEvent) => {
     e.preventDefault();

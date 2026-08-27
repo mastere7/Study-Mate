@@ -38,7 +38,7 @@ import {
 import { Subject, AIChatSession, AIChatMessage } from "../../types";
 import { apiService } from "../../services/api";
 import { audioSynth } from "../../services/audioSynth";
-import { storageService } from "../../services/storage";
+import { storageService, subscribeToStorageChanges, KEYS } from "../../services/storage";
 
 interface AITutorChatProps {
   subjects: Subject[];
@@ -127,6 +127,16 @@ export const AITutorChat: React.FC<AITutorChatProps> = ({
       }, 100);
     }
   }, [initialPrompt, onClearInitialPrompt]);
+
+  // Reactive subscription: dynamically update sessions when cloud sync loads or changes
+  useEffect(() => {
+    const unsubscribe = subscribeToStorageChanges((key, data) => {
+      if (key === KEYS.CHAT_SESSIONS && Array.isArray(data) && data.length > 0) {
+        setSessions(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // History panel & search states
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => {
