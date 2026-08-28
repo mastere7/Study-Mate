@@ -12,8 +12,8 @@ export const apiService = {
   askAITutor: async (req: AITutorRequest): Promise<string> => {
     let lastError: any = null;
 
-    // Try up to 3 attempts with backoff
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Single request with max 1 fallback attempt for network glitches
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await fetch("/api/ai/tutor", {
           method: "POST",
@@ -21,28 +21,52 @@ export const apiService = {
           body: JSON.stringify(req),
         });
 
+        // Parse JSON response safely
+        let data: any = null;
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          data = await res.json().catch(() => null);
+        } else {
+          const text = await res.text().catch(() => "");
+          try {
+            data = JSON.parse(text);
+          } catch {
+            data = null;
+          }
+        }
+
         if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.error || `Request failed with status ${res.status}`;
+          const errMsg =
+            data?.error ||
+            (res.status === 429
+              ? "StudyMate AI is temporarily busy. Please wait a moment before sending another question."
+              : `Request failed with status ${res.status}`);
           const customError: any = new Error(errMsg);
           customError.status = res.status;
           customError.code = res.status;
-          throw customError;
-        }
-
-        const data = await res.json();
-        if (data && typeof data.text === "string" && data.text.trim()) {
+          // Do not retry 400, 401, 403, or 429
+          if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 429) {
+            throw customError;
+          }
+          lastError = customError;
+        } else if (data && typeof data.text === "string" && data.text.trim()) {
           return data.text;
+        } else {
+          throw new Error("Received empty response from study assistant.");
         }
       } catch (err: any) {
         lastError = err;
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        // If error has a 4xx status code, do not retry
+        if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 429) {
+          throw err;
+        }
+        if (attempt < 1) {
+          await new Promise((r) => setTimeout(r, 600));
         }
       }
     }
 
-    throw lastError || new Error("Failed to get response from AI Tutor. Please try again.");
+    throw lastError || new Error("StudyMate AI is temporarily busy. Please try again in a few seconds.");
   },
 
   // 2. Document & PDF Analysis

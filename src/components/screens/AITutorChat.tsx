@@ -361,14 +361,10 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
 
     setErrorAlert(null);
 
-    // Prepare message list: if retrying, remove the previous error message and check if user message exists
-    let updatedMessages = [...activeSession.messages];
-    if (isRetry) {
-      if (retryErrorMsgId) {
-        updatedMessages = updatedMessages.filter((m) => m.id !== retryErrorMsgId);
-      } else {
-        updatedMessages = updatedMessages.filter((m) => !m.isError);
-      }
+    // Prepare message list: remove previous error messages and check if user message exists
+    let updatedMessages = activeSession.messages.filter((m) => !m.isError);
+    if (isRetry && retryErrorMsgId) {
+      updatedMessages = activeSession.messages.filter((m) => m.id !== retryErrorMsgId && !m.isError);
     }
 
     // If this is a fresh prompt (or if last message isn't already the user prompt), append userMsg
@@ -1064,8 +1060,9 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                     <button
                       key={idx}
                       type="button"
+                      disabled={isLoading}
                       onClick={() => handleSendMessage(promptText)}
-                      className="p-2.5 text-left rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 border border-slate-200 dark:border-slate-700/80 hover:border-indigo-300 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-all shadow-xs active:scale-98 cursor-pointer"
+                      className="p-2.5 text-left rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 border border-slate-200 dark:border-slate-700/80 hover:border-indigo-300 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-all shadow-xs active:scale-98 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       &ldquo;{promptText}&rdquo;
                     </button>

@@ -1,4 +1,4 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import multer from "multer";
 import dotenv from "dotenv";
@@ -14,9 +14,13 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Configure body parsing
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+// -------------------------------------------------------------
+// Middleware & Configuration
+// -------------------------------------------------------------
+
+// Body parsing with safe payload limits
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 // Enable CORS and preflight handling
 app.use((req, res, next) => {
@@ -38,11 +42,83 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit
 });
 
-// Initialize Gemini Client
-function getGeminiAI() {
+// -------------------------------------------------------------
+// Server-Side Rate Limiter (Protects Free Tier & Prevents Spam)
+// -------------------------------------------------------------
+
+interface RateLimitRecord {
+  lastRequestTime: number;
+  requestTimestamps: number[];
+}
+
+const rateLimitMap = new Map<string, RateLimitRecord>();
+
+// Clean up expired rate limit records periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of rateLimitMap.entries()) {
+    record.requestTimestamps = record.requestTimestamps.filter((t) => now - t < 60000);
+    if (record.requestTimestamps.length === 0 && now - record.lastRequestTime > 120000) {
+      rateLimitMap.delete(key);
+    }
+  }
+}, 60000);
+
+function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
+  // Allow health checks without rate limiting
+  if (req.path === "/api/health") {
+    return next();
+  }
+
+  const rawIp =
+    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    req.socket.remoteAddress ||
+    "127.0.0.1";
+
+  const now = Date.now();
+  let record = rateLimitMap.get(rawIp);
+
+  if (!record) {
+    record = { lastRequestTime: now, requestTimestamps: [now] };
+    rateLimitMap.set(rawIp, record);
+    return next();
+  }
+
+  // Filter requests within the last 60 seconds
+  record.requestTimestamps = record.requestTimestamps.filter((t) => now - t < 60000);
+
+  // Burst limit: at least 1.5 seconds between requests
+  if (now - record.lastRequestTime < 1500) {
+    return res.status(429).json({
+      error: "StudyMate AI is busy processing your previous request. Please wait 2 seconds before asking again.",
+      retryAfter: 2,
+    });
+  }
+
+  // Minute limit: max 30 requests per minute per IP
+  if (record.requestTimestamps.length >= 30) {
+    return res.status(429).json({
+      error: "You have reached the temporary rate limit. Please wait a minute before making more requests.",
+      retryAfter: 60,
+    });
+  }
+
+  record.lastRequestTime = now;
+  record.requestTimestamps.push(now);
+  next();
+}
+
+// Apply rate limiting to all /api/ai/* endpoints
+app.use("/api/ai", rateLimitMiddleware);
+
+// -------------------------------------------------------------
+// Gemini API Initialization & Model Resilience
+// -------------------------------------------------------------
+
+function getGeminiAI(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn("GEMINI_API_KEY is not set in environment variables.");
+    console.warn("[StudyMate Warning] GEMINI_API_KEY is not configured in server environment variables.");
   }
   return new GoogleGenAI({
     apiKey: apiKey || "",
@@ -54,12 +130,11 @@ function getGeminiAI() {
   });
 }
 
-// High-availability model list for study tasks (ordered by reliability and rate-limit limits)
+// Model fallback order (Fast, reliable, free-tier friendly)
 const RESILIENT_MODELS = [
-  "gemini-2.5-flash",
   "gemini-3.7-flash",
-  "gemini-2.5-flash-lite",
   "gemini-flash-latest",
+  "gemini-3.1-flash-lite",
 ];
 
 interface ResilienceOptions {
@@ -68,43 +143,46 @@ interface ResilienceOptions {
   primaryModel?: string;
 }
 
-// Helper to normalize multi-turn chat contents for Gemini API (must alternate user -> model and start with user)
+// Normalize multi-turn chat contents for Gemini API (alternating user -> model)
 function normalizeChatContents(
   history: { role: string; content: string }[] | undefined,
   currentPrompt: string
 ) {
+  const cleanPrompt = (currentPrompt || "").trim().substring(0, 8000);
+
+  // If no conversation history, pass string directly for fastest execution
+  if (!Array.isArray(history) || history.length === 0) {
+    return cleanPrompt || "Hello StudyMate";
+  }
+
   const contents: { role: "user" | "model"; parts: { text: string }[] }[] = [];
+  const recentHistory = history.slice(-6);
 
-  if (Array.isArray(history)) {
-    for (const item of history) {
-      if (!item || typeof item.content !== "string") continue;
-      const text = item.content.trim();
-      if (!text) continue;
+  for (const item of recentHistory) {
+    if (!item || typeof item.content !== "string") continue;
+    const text = item.content.trim().substring(0, 4000);
+    if (!text) continue;
 
-      const role: "user" | "model" =
-        item.role === "assistant" || item.role === "model" ? "model" : "user";
+    const role: "user" | "model" =
+      item.role === "assistant" || item.role === "model" ? "model" : "user";
 
-      if (contents.length === 0) {
-        // Gemini multi-turn chat MUST start with a 'user' turn
-        if (role === "user") {
-          contents.push({ role: "user", parts: [{ text }] });
-        }
+    if (contents.length === 0) {
+      // Multi-turn chat must start with user
+      if (role === "user") {
+        contents.push({ role: "user", parts: [{ text }] });
+      }
+    } else {
+      const lastTurn = contents[contents.length - 1];
+      if (lastTurn.role === role) {
+        lastTurn.parts[0].text += "\n\n" + text;
       } else {
-        const lastTurn = contents[contents.length - 1];
-        if (lastTurn.role === role) {
-          // Merge consecutive turns of same role to avoid Gemini 400 Invalid argument
-          lastTurn.parts[0].text += "\n\n" + text;
-        } else {
-          contents.push({ role, parts: [{ text }] });
-        }
+        contents.push({ role, parts: [{ text }] });
       }
     }
   }
 
-  const cleanPrompt = (currentPrompt || "").trim();
   if (cleanPrompt) {
     if (contents.length > 0 && contents[contents.length - 1].role === "user") {
-      // If last turn was user and identical, do not duplicate; otherwise append
       const lastText = contents[contents.length - 1].parts[0].text;
       if (lastText !== cleanPrompt) {
         contents[contents.length - 1].parts[0].text += "\n\n" + cleanPrompt;
@@ -114,46 +192,45 @@ function normalizeChatContents(
     }
   }
 
-  // Final validation: ensure at least one user message
   if (contents.length === 0) {
-    contents.push({ role: "user", parts: [{ text: cleanPrompt || "Hello StudyMate" }] });
+    return cleanPrompt || "Hello StudyMate";
   }
 
   return contents;
 }
 
-// Generate intelligent structured academic study response if live AI encounters transient upstream high traffic
+// Intelligent academic fallback generator when upstream Gemini service is temporarily overloaded
 function generateIntelligentStudyFallback(prompt: string, mode?: string, subject?: string): string {
   const cleanPrompt = prompt.trim();
   const subjName = subject || "Academic Study";
-  
-  return `### 💡 ${subjName}: Concept Overview & Analysis
 
-**1. Core Concept & Definition**
-When analyzing **"${cleanPrompt.replace(/[?.]+$/, "")}"**, the foundational concept centers on understanding the primary principles, underlying definitions, and standard mechanics governing this topic. In ${subjName}, this concept establishes how key components interact, what baseline rules apply, and how core terminology is systematically categorized.
+  return `### 💡 ${subjName}: Study Overview & Analysis
 
-**2. In-Depth Mechanics & Academic Deep Dive**
-Breaking this down further, the core structure operates through a series of interconnected relationships:
-- **Foundational Principles**: The underlying mechanism relies on standard theoretical frameworks and proven methodologies in ${subjName}.
-- **Key Mechanics & Properties**: Analyzing the variables and conditions reveals that changes in one parameter directly influence the resulting outputs and system behavior.
-- **Critical Distinctions**: It is essential to distinguish between fundamental baseline rules and specialized edge cases or conditional variations.
+**1. Core Concept & Direct Answer**
+When analyzing **"${cleanPrompt.replace(/[?.]+$/, "")}"**, the foundational concept in ${subjName} involves mastering the primary principles, governing definitions, and core rules that define this topic.
+
+**2. Deep Dive & Academic Mechanics**
+- **Foundational Principles**: The mechanism operates using standard theoretical models and verified rules in ${subjName}.
+- **Variables & Interactions**: Changes in core inputs or boundary conditions directly affect the resulting output and system behavior.
+- **Key Distinctions**: Always verify baseline assumptions versus special edge cases or conditional variations.
 
 **3. Practical Application & Real-World Example**
-To illustrate this in practice, consider how this principle applies to real-world scenarios. In practical applications, applying this method allows students and practitioners to solve complex problems by breaking them into structured steps: first identifying known parameters, then selecting appropriate formulas or logic, and finally verifying that the output satisfies all boundary conditions.
+In practice, problem solving in this domain follows a structured 3-step workflow: first identify known parameters, then apply the relevant formula or logic rule, and finally verify that the output meets all boundary requirements.
 
-**4. Key Takeaways & Exam Mastery Tips**
-- **High-Yield Memory Hook**: Master the foundational definitions and relationship formulas first before tackling complex multi-step variations.
-- **Active Recall Checklist**: Test your understanding by explaining this concept in your own words without looking at reference notes.
-- **Study Tip**: Connect this concept to adjacent topics in ${subjName} to strengthen your mental schema.
+**4. High-Yield Exam Takeaway & Tips**
+- **Memory Hook**: Master foundational terminology and formulas before tackling multi-step variations.
+- **Active Recall**: Test your mastery by explaining this concept in your own words without reference materials.
+- **Study Strategy**: Connect this concept to adjacent topics in ${subjName} to reinforce long-term memory retention.
 
-*(⚡ Note: Response synthesized via StudyMate Knowledge Engine during peak upstream traffic. Click "Re-query Live AI" below to refresh via live Gemini models.)*`;
+*(⚡ Note: Synthesized via StudyMate Knowledge Core during peak network traffic.)*`;
 }
 
+// Resilient API Caller (Max 2 total attempts, no retry storms)
 async function generateContentWithResilience(
   ai: GoogleGenAI,
   options: ResilienceOptions
 ) {
-  const primary = options.primaryModel || "gemini-2.5-flash";
+  const primary = options.primaryModel || "gemini-3.7-flash";
   const modelQueue = [
     primary,
     ...RESILIENT_MODELS.filter((m) => m !== primary),
@@ -161,62 +238,56 @@ async function generateContentWithResilience(
 
   let lastError: any = null;
 
-  for (const model of modelQueue) {
-    // Try each model with exponential backoff on transient 503/429/high-traffic errors
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        if (attempt > 0) {
-          // Wait with exponential backoff + jitter before retry (300ms, 700ms, 1200ms)
-          const jitter = Math.floor(Math.random() * 150);
-          await new Promise((r) => setTimeout(r, 350 * attempt + jitter));
-        }
+  // Try at most 2 models in the queue with at most 1 attempt each to prevent retry storms
+  const modelsToTry = modelQueue.slice(0, 2);
 
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: options.contents,
-          config: options.config,
-        });
-
-        if (response && response.text) {
-          return response;
-        }
-      } catch (err: any) {
-        lastError = err;
-        const msg = (err?.message || "").toLowerCase();
-
-        // Check if error is due to missing or invalid API key
-        if (
-          msg.includes("api_key") ||
-          msg.includes("api key") ||
-          msg.includes("unauthenticated") ||
-          msg.includes("401") ||
-          msg.includes("403") ||
-          msg.includes("permission_denied")
-        ) {
-          console.error(`[Gemini API Auth Error] API Key issue: ${err.message}`);
-          throw new Error("GEMINI_API_KEY is missing or invalid in your deployed environment settings. Please configure GEMINI_API_KEY in your hosting environment.");
-        }
-
-        // If it's a 503, 429, rate limit, or high traffic error, wait and retry or switch models
-        const isTransient =
-          msg.includes("503") ||
-          msg.includes("high demand") ||
-          msg.includes("unavailable") ||
-          msg.includes("429") ||
-          msg.includes("resource_exhausted") ||
-          msg.includes("quota") ||
-          msg.includes("overloaded") ||
-          msg.includes("service unavailable");
-
-        if (!isTransient && attempt === 0) {
-          // If non-transient error on first attempt, immediately try next model in queue
-          break;
-        }
+  for (let i = 0; i < modelsToTry.length; i++) {
+    const model = modelsToTry[i];
+    try {
+      if (i > 0) {
+        // Backoff with small jitter before fallback model
+        await new Promise((r) => setTimeout(r, 400 + Math.random() * 200));
       }
+
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: options.contents,
+        config: options.config,
+      });
+
+      if (response && response.text) {
+        return response;
+      }
+    } catch (err: any) {
+      lastError = err;
+      const msg = (err?.message || "").toLowerCase();
+
+      // Check for authentication / permission issues -> fail immediately
+      if (
+        msg.includes("api_key") ||
+        msg.includes("api key") ||
+        msg.includes("unauthenticated") ||
+        msg.includes("401") ||
+        msg.includes("403") ||
+        msg.includes("permission_denied")
+      ) {
+        console.error(`[Gemini API Auth Error] Issue with GEMINI_API_KEY: ${err.message}`);
+        throw new Error(
+          "GEMINI_API_KEY is missing or invalid in your hosting environment settings. Please verify GEMINI_API_KEY is configured in Vercel environment variables."
+        );
+      }
+
+      // If invalid arguments (400), do not retry
+      if (msg.includes("invalid argument") || msg.includes("400")) {
+        console.error(`[Gemini API 400 Error]: ${err.message}`);
+        throw err;
+      }
+
+      console.warn(`[Gemini API Warning] Model ${model} returned: ${err.message}. Trying next fallback...`);
     }
   }
 
-  throw lastError || new Error("All Gemini models currently unavailable due to high demand.");
+  throw lastError || new Error("All Gemini AI models currently unavailable due to high demand.");
 }
 
 // -------------------------------------------------------------
@@ -225,7 +296,12 @@ async function generateContentWithResilience(
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({
+    status: "ok",
+    service: "StudyMate API",
+    hasApiKey: !!process.env.GEMINI_API_KEY,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // 1. AI Tutor Assistant API
@@ -237,38 +313,47 @@ app.post("/api/ai/tutor", async (req, res) => {
   try {
     const { prompt, mode, subject, conversationHistory } = req.body;
 
-    if (!prompt) {
-      return res.status(400).json({ error: "Prompt is required" });
+    // Validate prompt
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return res.status(400).json({ error: "A valid study question prompt is required." });
     }
+
+    if (prompt.length > 8000) {
+      return res.status(400).json({ error: "Question is too long. Please limit prompts to 8,000 characters." });
+    }
+
+    // Validate mode
+    const validModes = ["standard", "eli5", "detailed", "code", "solver", "summary"];
+    const sanitizedMode = validModes.includes(mode) ? mode : "standard";
+    const sanitizedSubject = typeof subject === "string" ? subject.substring(0, 200) : "";
 
     const ai = getGeminiAI();
 
-    let systemInstruction = `You are "StudyMate AI", an expert, encouraging, empathetic personal tutor and study assistant for students.
-Your goal is to provide comprehensive, thorough, and complete explanations. Unless the user explicitly asks for a single sentence, always structure your answers with at least 3 to 4 detailed paragraphs covering:
-1. **Core Concept & Direct Answer**: A clear, intuitive overview defining and directly addressing the question.
+    let systemInstruction = `You are "StudyMate AI", an expert, encouraging, empathetic personal tutor and study companion for students.
+Your goal is to provide comprehensive, thorough, and complete explanations. Unless the user explicitly asks for a short answer, structure your response with structured sections covering:
+1. **Core Concept & Direct Answer**: A clear, intuitive overview directly answering the question.
 2. **Deep Dive & Mechanics**: The underlying technical principles, key formulas, rules, or step-by-step breakdown.
 3. **Real-World Analogy & Concrete Examples**: A relatable real-world comparison, case study, or code snippet.
-4. **Key Takeaway & Exam / Practical Tip**: High-yield summary, memory hooks, and practical advice.
+4. **Key Takeaway & Exam / Practical Tip**: High-yield summary, memory hooks, and practical study advice.
 
-Use clear markdown headers, bold highlights, bullet points, and code blocks (if applicable) for crystal-clear readability.`;
+Use clear markdown headers, bold highlights, bullet points, and code blocks for crystal-clear readability.`;
 
-    if (mode === "eli5") {
-      systemInstruction += " In 'ELI5' mode, explain the topic using simple terms, vivid analogies, and clear everyday examples across 3-4 structured paragraphs.";
-    } else if (mode === "detailed") {
-      systemInstruction += " In 'Deep Dive' mode, provide a rich, comprehensive academic breakdown including key formulas, core principles, historical context, edge cases, and practical applications across 4+ thorough paragraphs.";
-    } else if (mode === "code") {
-      systemInstruction += " In 'Code Explainer' mode, break down the code line-by-line, explaining the logic, time/space complexity, edge cases, best practices, and fully functional corrected snippets.";
-    } else if (mode === "solver") {
-      systemInstruction += " In 'Step-by-Step Solver' mode, format your answer thoroughly: State the problem -> Identify knowns & unknowns -> Step 1, Step 2, Step 3, etc. -> Final Solution & Verification.";
-    } else if (mode === "summary") {
+    if (sanitizedMode === "eli5") {
+      systemInstruction += " In 'ELI5' mode, explain the topic using simple terms, vivid analogies, and everyday examples.";
+    } else if (sanitizedMode === "detailed") {
+      systemInstruction += " In 'Deep Dive' mode, provide a rich, comprehensive academic breakdown including key formulas, core principles, historical context, edge cases, and practical applications.";
+    } else if (sanitizedMode === "code") {
+      systemInstruction += " In 'Code Explainer' mode, break down the code line-by-line, explaining the logic, time/space complexity, edge cases, best practices, and functional snippets.";
+    } else if (sanitizedMode === "solver") {
+      systemInstruction += " In 'Step-by-Step Solver' mode, format thoroughly: State problem -> Identify knowns & unknowns -> Step 1, Step 2, Step 3 -> Final Solution & Verification.";
+    } else if (sanitizedMode === "summary") {
       systemInstruction += " Provide an executive summary with a 2-paragraph overview followed by 5 clear key takeaway bullet points.";
     }
 
-    if (subject) {
-      systemInstruction += ` The context for this query is the subject: ${subject}.`;
+    if (sanitizedSubject) {
+      systemInstruction += ` The context for this query is the subject: ${sanitizedSubject}.`;
     }
 
-    // Build properly formatted alternating contents array for Gemini
     const contents = normalizeChatContents(conversationHistory, prompt);
 
     try {
@@ -277,6 +362,7 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks (if 
         config: {
           systemInstruction,
           temperature: 0.7,
+          maxOutputTokens: sanitizedMode === "detailed" ? 3000 : 2048,
         },
       });
 
@@ -285,10 +371,10 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks (if 
         isFallback: false,
       });
     } catch (modelErr: any) {
-      console.warn("[Gemini API in /api/ai/tutor] High demand or unavailable:", modelErr.message);
-      
-      // Generate intelligent multi-paragraph fallback study response so student is never blocked
-      const fallbackResponse = generateIntelligentStudyFallback(prompt, mode, subject);
+      console.warn("[Gemini API in /api/ai/tutor] High demand or error:", modelErr.message);
+
+      // Return intelligent fallback study response so student is never blocked
+      const fallbackResponse = generateIntelligentStudyFallback(prompt, sanitizedMode, sanitizedSubject);
       return res.json({
         text: fallbackResponse,
         isFallback: true,
@@ -297,7 +383,11 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks (if 
     }
   } catch (error: any) {
     console.error("Error in /api/ai/tutor:", error);
-    const fallbackResponse = generateIntelligentStudyFallback(req.body.prompt || "Study Question", req.body.mode, req.body.subject);
+    const fallbackResponse = generateIntelligentStudyFallback(
+      req.body?.prompt || "Study Question",
+      req.body?.mode,
+      req.body?.subject
+    );
     return res.json({
       text: fallbackResponse,
       isFallback: true,
@@ -315,7 +405,6 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
     const action = req.body.action || "summary"; // summary, key_points, study_guide, qa
 
     const ai = getGeminiAI();
-
     let parts: any[] = [];
 
     if (file) {
@@ -326,22 +415,20 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
         try {
           const result = await mammoth.extractRawText({ buffer: file.buffer });
           const extractedDocx = result.value || "";
-          parts.push({ text: `Document "${filename}" (Word Document Content):\n\n${extractedDocx}` });
+          parts.push({ text: `Document "${filename}" (Word Document Content):\n\n${extractedDocx.substring(0, 35000)}` });
         } catch (docxErr) {
-          console.warn("Mammoth DOCX parsing warning, fallback to text conversion:", docxErr);
-          const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ");
+          const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").substring(0, 35000);
           parts.push({ text: `Document "${filename}" (Word Document Content):\n\n${rawText}` });
         }
       } else if (fnLower.endsWith(".doc") || mimeType.includes("msword")) {
-        // Legacy Word .doc file text extraction
-        const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ");
+        const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").substring(0, 35000);
         parts.push({ text: `Document "${filename}" (Word Document Content):\n\n${rawText}` });
       } else if (fnLower.endsWith(".pdf") || mimeType.includes("pdf")) {
         try {
           const pdfData = await pdfParse(file.buffer);
           const extractedPdfText = (pdfData.text || "").trim();
           if (extractedPdfText.length > 20) {
-            parts.push({ text: `Document "${filename}" (Extracted PDF Content):\n\n${extractedPdfText.substring(0, 45000)}` });
+            parts.push({ text: `Document "${filename}" (Extracted PDF Content):\n\n${extractedPdfText.substring(0, 35000)}` });
           } else {
             const base64Data = file.buffer.toString("base64");
             parts.push({
@@ -352,7 +439,6 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
             });
           }
         } catch (pdfErr) {
-          console.warn("PDF parsing fallback to inlineData:", pdfErr);
           const base64Data = file.buffer.toString("base64");
           parts.push({
             inlineData: {
@@ -362,10 +448,9 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
           });
         }
       } else if (fnLower.endsWith(".txt") || mimeType.startsWith("text/")) {
-        const textData = file.buffer.toString("utf-8");
+        const textData = file.buffer.toString("utf-8").substring(0, 35000);
         parts.push({ text: `Document "${filename}" Content:\n\n${textData}` });
       } else {
-        // Images or standard supported formats for Gemini inlineData
         const base64Data = file.buffer.toString("base64");
         const safeMime = mimeType || "image/jpeg";
         parts.push({
@@ -375,8 +460,8 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
           },
         });
       }
-    } else if (textContent) {
-      parts.push({ text: `Document Content:\n${textContent}` });
+    } else if (textContent && typeof textContent === "string") {
+      parts.push({ text: `Document Content:\n${textContent.substring(0, 35000)}` });
     } else {
       return res.status(400).json({ error: "No file or text content provided" });
     }
@@ -393,7 +478,7 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
     } else if (action === "study_guide") {
       promptText = `Create a comprehensive Study Guide for "${filename}" including revision questions, flashcard concepts, and summary points.`;
     } else if (action === "qa") {
-      const userQuestion = req.body.question || "Summarize this document.";
+      const userQuestion = (req.body.question || "Summarize this document.").substring(0, 1000);
       promptText = `Based strictly on the document "${filename}", answer the following question in detail:\n"${userQuestion}"`;
     }
 
@@ -405,6 +490,7 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
         config: {
           systemInstruction: "You are an expert document research assistant and academic summarizer.",
           temperature: 0.4,
+          maxOutputTokens: 2500,
         },
       });
 
@@ -414,8 +500,7 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
       });
     } catch (aiErr: any) {
       console.warn("Gemini API call warning in analyze-document, generating smart local summary:", aiErr.message);
-      
-      // Smart offline fallback extracting text content if available
+
       let extractedTextContent = "";
       for (const p of parts) {
         if (p.text) extractedTextContent += p.text + "\n";
@@ -446,12 +531,20 @@ app.post("/api/ai/generate-quiz", async (req, res) => {
   try {
     const { topic, sourceText, count = 5, difficulty = "Medium", questionTypes } = req.body;
 
+    if (!topic && !sourceText) {
+      return res.status(400).json({ error: "Topic or source material text is required." });
+    }
+
+    const sanitizedTopic = typeof topic === "string" ? topic.substring(0, 500) : "General Study Topic";
+    const sanitizedSource = typeof sourceText === "string" ? sourceText.substring(0, 10000) : "";
+    const questionCount = Math.max(1, Math.min(15, parseInt(count as any, 10) || 5));
+
     const ai = getGeminiAI();
 
-    const prompt = `Generate a ${count}-question quiz about "${topic || "General Study Topic"}".
-${sourceText ? `Base the quiz on this study material:\n${sourceText.substring(0, 4000)}\n` : ""}
+    const prompt = `Generate a ${questionCount}-question quiz about "${sanitizedTopic}".
+${sanitizedSource ? `Base the quiz on this study material:\n${sanitizedSource}\n` : ""}
 Difficulty level: ${difficulty}.
-Include question types: ${questionTypes ? questionTypes.join(", ") : "Multiple Choice, True/False, Short Answer"}.
+Include question types: ${Array.isArray(questionTypes) ? questionTypes.join(", ") : "Multiple Choice, True/False, Short Answer"}.
 
 Ensure every question includes 4 choices (for multiple choice), the correct answer string, and a helpful step-by-step explanation for why the answer is correct.`;
 
@@ -460,6 +553,7 @@ Ensure every question includes 4 choices (for multiple choice), the correct answ
       config: {
         systemInstruction: "You are a professional educational assessment creator.",
         responseMimeType: "application/json",
+        maxOutputTokens: 2500,
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -498,21 +592,19 @@ Ensure every question includes 4 choices (for multiple choice), the correct answ
   }
 });
 
-// 4. AI Flashcard Generator API (Supports direct Course file uploads + text)
+// 4. AI Flashcard Generator API
 app.post("/api/ai/generate-flashcards", upload.single("file"), async (req, res) => {
   try {
     const file = req.file;
     const topic = req.body.topic || "";
     const sourceText = req.body.sourceText || "";
-    const count = parseInt(req.body.count || "10", 10);
+    const count = Math.max(1, Math.min(20, parseInt(req.body.count || "8", 10)));
     const subject = req.body.subject || "";
     const difficulty = req.body.difficulty || "High-Yield";
 
     const ai = getGeminiAI();
-
     let parts: any[] = [];
 
-    // Handle course file upload if present
     if (file) {
       const fnLower = (file.originalname || "").toLowerCase();
       const mimeType = file.mimetype || "";
@@ -520,9 +612,9 @@ app.post("/api/ai/generate-flashcards", upload.single("file"), async (req, res) 
       if (fnLower.endsWith(".docx") || mimeType.includes("wordprocessingml")) {
         try {
           const result = await mammoth.extractRawText({ buffer: file.buffer });
-          parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${result.value || ""}` });
+          parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${(result.value || "").substring(0, 30000)}` });
         } catch (docxErr) {
-          const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ");
+          const rawText = file.buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").substring(0, 30000);
           parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${rawText}` });
         }
       } else if (fnLower.endsWith(".pdf") || mimeType.includes("pdf")) {
@@ -530,7 +622,7 @@ app.post("/api/ai/generate-flashcards", upload.single("file"), async (req, res) 
           const pdfData = await pdfParse(file.buffer);
           const extractedPdfText = (pdfData.text || "").trim();
           if (extractedPdfText.length > 20) {
-            parts.push({ text: `Course Material File ("${file.originalname}") Text Content:\n\n${extractedPdfText.substring(0, 45000)}` });
+            parts.push({ text: `Course Material File ("${file.originalname}") Text Content:\n\n${extractedPdfText.substring(0, 30000)}` });
           } else {
             const base64Data = file.buffer.toString("base64");
             parts.push({
@@ -550,7 +642,7 @@ app.post("/api/ai/generate-flashcards", upload.single("file"), async (req, res) 
           });
         }
       } else if (fnLower.endsWith(".txt") || mimeType.startsWith("text/")) {
-        parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${file.buffer.toString("utf-8")}` });
+        parts.push({ text: `Course Material File ("${file.originalname}") Content:\n\n${file.buffer.toString("utf-8").substring(0, 30000)}` });
       } else {
         const base64Data = file.buffer.toString("base64");
         const safeMime = mimeType || "image/jpeg";
@@ -564,7 +656,7 @@ app.post("/api/ai/generate-flashcards", upload.single("file"), async (req, res) 
     }
 
     if (sourceText) {
-      parts.push({ text: `Course Study Material Text:\n${sourceText.substring(0, 8000)}` });
+      parts.push({ text: `Course Study Material Text:\n${(sourceText as string).substring(0, 8000)}` });
     }
 
     const promptInstructions = `You are a world-class cognitive learning specialist and flashcard creator.
@@ -587,6 +679,7 @@ Rules for high-yield flashcards:
       config: {
         systemInstruction: "You are a flashcard memory expert specializing in active recall and spaced repetition Leitner methods.",
         responseMimeType: "application/json",
+        maxOutputTokens: 2500,
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -633,7 +726,7 @@ app.post("/api/ai/ocr-solve", upload.single("image"), async (req, res) => {
     }
 
     if (!imageBase64) {
-      return res.status(400).json({ error: "Image data is required" });
+      return res.status(400).json({ error: "Image data is required for OCR scanning." });
     }
 
     const ai = getGeminiAI();
@@ -660,6 +753,7 @@ Provide a structured response:
       config: {
         systemInstruction: "You are a master academic OCR scanner and step-by-step math & science tutor.",
         temperature: 0.2,
+        maxOutputTokens: 2048,
       },
     });
 
@@ -676,17 +770,21 @@ Provide a structured response:
 app.post("/api/ai/voice-explain", async (req, res) => {
   try {
     const { question, topic } = req.body;
-    if (!question) {
+    if (!question || typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ error: "Question is required" });
     }
+
+    const cleanQuestion = question.trim().substring(0, 1000);
+    const cleanTopic = typeof topic === "string" ? topic.substring(0, 200) : "general knowledge";
 
     const ai = getGeminiAI();
 
     const response = await generateContentWithResilience(ai, {
-      contents: `Provide a concise, conversational 3 to 4 sentence explanation suitable for reading aloud to a student asking: "${question}". Topic context: ${topic || "general knowledge"}.`,
+      contents: `Provide a concise, conversational 3 to 4 sentence explanation suitable for reading aloud to a student asking: "${cleanQuestion}". Topic context: ${cleanTopic}.`,
       config: {
-        systemInstruction: "You are an enthusiastic, clear radio podcast host / voice tutor for students.",
+        systemInstruction: "You are an enthusiastic, clear voice tutor and radio podcast host for students.",
         temperature: 0.6,
+        maxOutputTokens: 500,
       },
     });
 
@@ -700,7 +798,7 @@ app.post("/api/ai/voice-explain", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// Express Server & Vite Development / Production Setup
+// Server Initialization (Standalone Dev / Container Mode)
 // -------------------------------------------------------------
 
 async function startServer() {
@@ -723,4 +821,16 @@ async function startServer() {
   });
 }
 
-startServer();
+// Check if running in Vercel Serverless environment
+const isVercel =
+  process.env.VERCEL === "1" ||
+  !!process.env.NOW_REGION ||
+  !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+if (!isVercel) {
+  startServer();
+}
+
+// Export for Vercel Serverless Functions
+export default app;
+export { app };
