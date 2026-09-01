@@ -8,11 +8,39 @@ export interface AITutorRequest {
 }
 
 export const apiService = {
+  // Helper to format clear error messages based on HTTP status code
+  getErrorMessage: (status: number, serverError?: string): string => {
+    if (serverError && typeof serverError === "string" && serverError.trim().length > 0) {
+      return serverError;
+    }
+    switch (status) {
+      case 405:
+        return "StudyMate AI endpoint configuration error. Please try again later.";
+      case 429:
+        return "StudyMate AI is temporarily busy. Please try again shortly.";
+      case 503:
+      case 502:
+      case 504:
+        return "StudyMate AI is temporarily unavailable. Please try again shortly.";
+      case 401:
+      case 403:
+        return "StudyMate AI configuration error. Please verify GEMINI_API_KEY in environment variables.";
+      case 400:
+        return "Please check your question and try again.";
+      case 404:
+        return "StudyMate AI endpoint not found (Code 404).";
+      case 500:
+        return "StudyMate AI encountered a temporary server error.";
+      default:
+        return `Request failed with status ${status}. Please try again.`;
+    }
+  },
+
   // 1. AI Tutor Assistant
   askAITutor: async (req: AITutorRequest): Promise<string> => {
     let lastError: any = null;
 
-    // Single request with max 1 fallback attempt for network glitches
+    // Single request with max 1 fallback attempt for transient server glitches (500/503)
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await fetch("/api/ai/tutor", {
@@ -36,16 +64,20 @@ export const apiService = {
         }
 
         if (!res.ok) {
-          const errMsg =
-            data?.error ||
-            (res.status === 429
-              ? "StudyMate AI is temporarily busy. Please wait a moment before sending another question."
-              : `Request failed with status ${res.status}`);
+          const errMsg = apiService.getErrorMessage(res.status, data?.error);
           const customError: any = new Error(errMsg);
           customError.status = res.status;
           customError.code = res.status;
-          // Do not retry 400, 401, 403, or 429
-          if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 429) {
+          customError.serverData = data;
+
+          // STRICT NON-RETRY: Do not retry 400, 401, 403, 404, or 405
+          if (
+            res.status === 400 ||
+            res.status === 401 ||
+            res.status === 403 ||
+            res.status === 404 ||
+            res.status === 405
+          ) {
             throw customError;
           }
           lastError = customError;
@@ -56,8 +88,9 @@ export const apiService = {
         }
       } catch (err: any) {
         lastError = err;
-        // If error has a 4xx status code, do not retry
-        if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 429) {
+        // If error is a client/auth/method error (400, 401, 403, 404, 405), never retry
+        const s = err?.status || err?.code;
+        if (s === 400 || s === 401 || s === 403 || s === 404 || s === 405) {
           throw err;
         }
         if (attempt < 1) {

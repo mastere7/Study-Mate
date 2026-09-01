@@ -440,9 +440,11 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
     } catch (err: any) {
       console.warn("AI Tutor caught error in component:", err);
       const errorCode = err?.status || err?.code || 503;
+      const rawErrMsg = err?.message || "";
+      const displayMsg = apiService.getErrorMessage(errorCode, rawErrMsg);
 
       setErrorAlert({
-        message: "Request failed due to high demand. Your conversation history is safe.",
+        message: displayMsg,
         prompt: prompt,
         code: errorCode,
       });
@@ -450,7 +452,7 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
       const errorMsg: AIChatMessage = {
         id: `err_${Date.now()}`,
         role: "assistant",
-        content: "Temporary high server traffic. Your conversation history is preserved.",
+        content: displayMsg,
         isError: true,
         errorCode: errorCode,
         retryPrompt: prompt,
@@ -901,17 +903,27 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200">
-                              High Traffic Demand Detected
+                              {msg.errorCode === 405
+                                ? "Endpoint Method Notice"
+                                : msg.errorCode === 429
+                                ? "Rate Limit / Traffic Notice"
+                                : msg.errorCode === 401 || msg.errorCode === 403
+                                ? "Authentication Notice"
+                                : msg.errorCode === 503
+                                ? "High Traffic Demand Detected"
+                                : msg.errorCode === 500
+                                ? "Server Error"
+                                : "Request Notice"}
                             </h4>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                               ✓ Chat History Preserved
                             </span>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200/80 dark:bg-amber-900 text-amber-800 dark:text-amber-300">
-                              {msg.errorCode === 503 ? "503 High Traffic" : `Code ${msg.errorCode || "503"}`}
+                              {msg.errorCode ? `Code ${msg.errorCode}` : "Notice"}
                             </span>
                           </div>
                           <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
-                            Upstream AI servers experienced temporary high volume. Your complete conversation history and question have been safely kept.
+                            {msg.content || "Upstream AI servers experienced temporary high volume. Your complete conversation history and question have been safely kept."}
                           </p>
                           {msg.retryPrompt && (
                             <div className="text-[11px] font-mono bg-white/80 dark:bg-slate-900/80 p-2 rounded-xl text-slate-700 dark:text-slate-300 border border-amber-200/60 dark:border-amber-800/40 truncate">
@@ -1119,7 +1131,15 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
               <div className="flex items-center gap-2 min-w-0">
                 <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                 <span className="font-bold truncate">
-                  High API traffic detected
+                  {errorAlert.code === 405
+                    ? "API Method Configuration Notice"
+                    : errorAlert.code === 429
+                    ? "Rate limit / traffic notice"
+                    : errorAlert.code === 401 || errorAlert.code === 403
+                    ? "Authentication notice"
+                    : errorAlert.code === 500
+                    ? "Server processing error"
+                    : "High API traffic detected"}
                 </span>
                 <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                   Chat History Saved

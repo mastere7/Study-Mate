@@ -6,7 +6,6 @@ import mammoth from "mammoth";
 // @ts-ignore
 import * as pdfParseModule from "pdf-parse";
 const pdfParse = (pdfParseModule as any).default || pdfParseModule;
-import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 
 dotenv.config();
@@ -33,6 +32,19 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
   }
+  next();
+});
+
+// Safe server-side diagnostic logging (never logs API keys, passwords, or sensitive payloads)
+app.use((req, res, next) => {
+  const start = Date.now();
+  const reqPath = req.originalUrl || req.url;
+  res.on("finish", () => {
+    // Only log API routes to keep logs concise
+    if (reqPath.startsWith("/api") || reqPath.startsWith("/ai") || reqPath.startsWith("/health")) {
+      console.log(`[API Log] ${req.method} ${reqPath} -> Status ${res.statusCode} (${Date.now() - start}ms)`);
+    }
+  });
   next();
 });
 
@@ -111,191 +123,23 @@ function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
 // Apply rate limiting to all /api/ai/* endpoints
 app.use("/api/ai", rateLimitMiddleware);
 
-// -------------------------------------------------------------
-// Gemini API Initialization & Model Resilience
-// -------------------------------------------------------------
+import {
+  getGeminiAI,
+  PRIMARY_MODEL,
+  FALLBACK_MODEL,
+  normalizeChatContents,
+  generateContentWithResilience,
+  classifyGeminiError,
+  Type,
+} from "./src/server/gemini";
 
-function getGeminiAI(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn("[StudyMate Warning] GEMINI_API_KEY is not configured in server environment variables.");
-  }
-  return new GoogleGenAI({
-    apiKey: apiKey || "",
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
-  });
-}
-
-// Model fallback order (Fast, reliable, free-tier friendly)
-const RESILIENT_MODELS = [
-  "gemini-3.7-flash",
-  "gemini-flash-latest",
-  "gemini-3.1-flash-lite",
-];
-
-interface ResilienceOptions {
-  contents: any;
-  config?: any;
-  primaryModel?: string;
-}
-
-// Normalize multi-turn chat contents for Gemini API (alternating user -> model)
-function normalizeChatContents(
-  history: { role: string; content: string }[] | undefined,
-  currentPrompt: string
-) {
-  const cleanPrompt = (currentPrompt || "").trim().substring(0, 8000);
-
-  // If no conversation history, pass string directly for fastest execution
-  if (!Array.isArray(history) || history.length === 0) {
-    return cleanPrompt || "Hello StudyMate";
-  }
-
-  const contents: { role: "user" | "model"; parts: { text: string }[] }[] = [];
-  const recentHistory = history.slice(-6);
-
-  for (const item of recentHistory) {
-    if (!item || typeof item.content !== "string") continue;
-    const text = item.content.trim().substring(0, 4000);
-    if (!text) continue;
-
-    const role: "user" | "model" =
-      item.role === "assistant" || item.role === "model" ? "model" : "user";
-
-    if (contents.length === 0) {
-      // Multi-turn chat must start with user
-      if (role === "user") {
-        contents.push({ role: "user", parts: [{ text }] });
-      }
-    } else {
-      const lastTurn = contents[contents.length - 1];
-      if (lastTurn.role === role) {
-        lastTurn.parts[0].text += "\n\n" + text;
-      } else {
-        contents.push({ role, parts: [{ text }] });
-      }
-    }
-  }
-
-  if (cleanPrompt) {
-    if (contents.length > 0 && contents[contents.length - 1].role === "user") {
-      const lastText = contents[contents.length - 1].parts[0].text;
-      if (lastText !== cleanPrompt) {
-        contents[contents.length - 1].parts[0].text += "\n\n" + cleanPrompt;
-      }
-    } else {
-      contents.push({ role: "user", parts: [{ text: cleanPrompt }] });
-    }
-  }
-
-  if (contents.length === 0) {
-    return cleanPrompt || "Hello StudyMate";
-  }
-
-  return contents;
-}
-
-// Intelligent academic fallback generator when upstream Gemini service is temporarily overloaded
-function generateIntelligentStudyFallback(prompt: string, mode?: string, subject?: string): string {
-  const cleanPrompt = prompt.trim();
-  const subjName = subject || "Academic Study";
-
-  return `### 💡 ${subjName}: Study Overview & Analysis
-
-**1. Core Concept & Direct Answer**
-When analyzing **"${cleanPrompt.replace(/[?.]+$/, "")}"**, the foundational concept in ${subjName} involves mastering the primary principles, governing definitions, and core rules that define this topic.
-
-**2. Deep Dive & Academic Mechanics**
-- **Foundational Principles**: The mechanism operates using standard theoretical models and verified rules in ${subjName}.
-- **Variables & Interactions**: Changes in core inputs or boundary conditions directly affect the resulting output and system behavior.
-- **Key Distinctions**: Always verify baseline assumptions versus special edge cases or conditional variations.
-
-**3. Practical Application & Real-World Example**
-In practice, problem solving in this domain follows a structured 3-step workflow: first identify known parameters, then apply the relevant formula or logic rule, and finally verify that the output meets all boundary requirements.
-
-**4. High-Yield Exam Takeaway & Tips**
-- **Memory Hook**: Master foundational terminology and formulas before tackling multi-step variations.
-- **Active Recall**: Test your mastery by explaining this concept in your own words without reference materials.
-- **Study Strategy**: Connect this concept to adjacent topics in ${subjName} to reinforce long-term memory retention.
-
-*(⚡ Note: Synthesized via StudyMate Knowledge Core during peak network traffic.)*`;
-}
-
-// Resilient API Caller (Max 2 total attempts, no retry storms)
-async function generateContentWithResilience(
-  ai: GoogleGenAI,
-  options: ResilienceOptions
-) {
-  const primary = options.primaryModel || "gemini-3.7-flash";
-  const modelQueue = [
-    primary,
-    ...RESILIENT_MODELS.filter((m) => m !== primary),
-  ];
-
-  let lastError: any = null;
-
-  // Try at most 2 models in the queue with at most 1 attempt each to prevent retry storms
-  const modelsToTry = modelQueue.slice(0, 2);
-
-  for (let i = 0; i < modelsToTry.length; i++) {
-    const model = modelsToTry[i];
-    try {
-      if (i > 0) {
-        // Backoff with small jitter before fallback model
-        await new Promise((r) => setTimeout(r, 400 + Math.random() * 200));
-      }
-
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: options.contents,
-        config: options.config,
-      });
-
-      if (response && response.text) {
-        return response;
-      }
-    } catch (err: any) {
-      lastError = err;
-      const msg = (err?.message || "").toLowerCase();
-
-      // Check for authentication / permission issues -> fail immediately
-      if (
-        msg.includes("api_key") ||
-        msg.includes("api key") ||
-        msg.includes("unauthenticated") ||
-        msg.includes("401") ||
-        msg.includes("403") ||
-        msg.includes("permission_denied")
-      ) {
-        console.error(`[Gemini API Auth Error] Issue with GEMINI_API_KEY: ${err.message}`);
-        throw new Error(
-          "GEMINI_API_KEY is missing or invalid in your hosting environment settings. Please verify GEMINI_API_KEY is configured in Vercel environment variables."
-        );
-      }
-
-      // If invalid arguments (400), do not retry
-      if (msg.includes("invalid argument") || msg.includes("400")) {
-        console.error(`[Gemini API 400 Error]: ${err.message}`);
-        throw err;
-      }
-
-      console.warn(`[Gemini API Warning] Model ${model} returned: ${err.message}. Trying next fallback...`);
-    }
-  }
-
-  throw lastError || new Error("All Gemini AI models currently unavailable due to high demand.");
-}
 
 // -------------------------------------------------------------
-// API Endpoints
+// API Endpoints (Supports both local Express paths and Vercel serverless functions)
 // -------------------------------------------------------------
 
-// Health check endpoint
-app.get("/api/health", (req, res) => {
+// Health check endpoint (GET /api/health)
+app.all(["/api/health", "/health", "/api"], (req, res) => {
   res.json({
     status: "ok",
     service: "StudyMate API",
@@ -305,13 +149,19 @@ app.get("/api/health", (req, res) => {
 });
 
 // 1. AI Tutor Assistant API
-app.get("/api/ai/tutor", (req, res) => {
-  res.json({ status: "ok", endpoint: "/api/ai/tutor", method: "POST" });
+app.get(["/api/ai/tutor", "/ai/tutor", "/tutor"], (req, res) => {
+  res.json({
+    status: "ok",
+    endpoint: "/api/ai/tutor",
+    method: "POST",
+    message: "StudyMate AI Tutor is active. Send a POST request with JSON body { prompt, mode, subject, conversationHistory }.",
+    timestamp: new Date().toISOString(),
+  });
 });
 
-app.post("/api/ai/tutor", async (req, res) => {
+app.post(["/api/ai/tutor", "/ai/tutor", "/tutor"], async (req, res) => {
   try {
-    const { prompt, mode, subject, conversationHistory } = req.body;
+    const { prompt, mode, subject, conversationHistory } = req.body || {};
 
     // Validate prompt
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
@@ -356,48 +206,35 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
 
     const contents = normalizeChatContents(conversationHistory, prompt);
 
-    try {
-      const response = await generateContentWithResilience(ai, {
-        contents: contents,
-        config: {
-          systemInstruction,
-          temperature: 0.7,
-          maxOutputTokens: sanitizedMode === "detailed" ? 3000 : 2048,
-        },
-      });
+    const response = await generateContentWithResilience(ai, {
+      contents: contents,
+      config: {
+        systemInstruction,
+        temperature: 0.7,
+        maxOutputTokens: sanitizedMode === "detailed" ? 3000 : 2048,
+      },
+    });
 
-      return res.json({
-        text: response.text || "I'm here to help! Please clarify or try asking another study question.",
-        isFallback: false,
-      });
-    } catch (modelErr: any) {
-      console.warn("[Gemini API in /api/ai/tutor] High demand or error:", modelErr.message);
-
-      // Return intelligent fallback study response so student is never blocked
-      const fallbackResponse = generateIntelligentStudyFallback(prompt, sanitizedMode, sanitizedSubject);
-      return res.json({
-        text: fallbackResponse,
-        isFallback: true,
-        highDemand: true,
-      });
-    }
+    return res.json({
+      text: response.text || "I'm here to help! Please clarify or try asking another study question.",
+      isFallback: false,
+    });
   } catch (error: any) {
     console.error("Error in /api/ai/tutor:", error);
-    const fallbackResponse = generateIntelligentStudyFallback(
-      req.body?.prompt || "Study Question",
-      req.body?.mode,
-      req.body?.subject
-    );
-    return res.json({
-      text: fallbackResponse,
-      isFallback: true,
-      highDemand: true,
+    const classified = classifyGeminiError(error);
+    return res.status(classified.status).json({
+      error: classified.message,
+      status: classified.status,
     });
   }
 });
 
 // 2. Document & PDF & Word Analysis API
-app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => {
+app.get(["/api/ai/analyze-document", "/ai/analyze-document", "/analyze-document"], (req, res) => {
+  res.json({ status: "ok", endpoint: "/api/ai/analyze-document", method: "POST" });
+});
+
+app.post(["/api/ai/analyze-document", "/ai/analyze-document", "/analyze-document"], upload.single("file"), async (req, res) => {
   try {
     const file = req.file;
     const textContent = req.body.textContent;
@@ -527,9 +364,13 @@ app.post("/api/ai/analyze-document", upload.single("file"), async (req, res) => 
 });
 
 // 3. AI Quiz Generator API (Structured JSON)
-app.post("/api/ai/generate-quiz", async (req, res) => {
+app.get(["/api/ai/generate-quiz", "/ai/generate-quiz", "/generate-quiz"], (req, res) => {
+  res.json({ status: "ok", endpoint: "/api/ai/generate-quiz", method: "POST" });
+});
+
+app.post(["/api/ai/generate-quiz", "/ai/generate-quiz", "/generate-quiz"], async (req, res) => {
   try {
-    const { topic, sourceText, count = 5, difficulty = "Medium", questionTypes } = req.body;
+    const { topic, sourceText, count = 5, difficulty = "Medium", questionTypes } = req.body || {};
 
     if (!topic && !sourceText) {
       return res.status(400).json({ error: "Topic or source material text is required." });
@@ -593,7 +434,11 @@ Ensure every question includes 4 choices (for multiple choice), the correct answ
 });
 
 // 4. AI Flashcard Generator API
-app.post("/api/ai/generate-flashcards", upload.single("file"), async (req, res) => {
+app.get(["/api/ai/generate-flashcards", "/ai/generate-flashcards", "/generate-flashcards"], (req, res) => {
+  res.json({ status: "ok", endpoint: "/api/ai/generate-flashcards", method: "POST" });
+});
+
+app.post(["/api/ai/generate-flashcards", "/ai/generate-flashcards", "/generate-flashcards"], upload.single("file"), async (req, res) => {
   try {
     const file = req.file;
     const topic = req.body.topic || "";
@@ -715,7 +560,11 @@ Rules for high-yield flashcards:
 });
 
 // 5. Question Scanner (OCR & Step-by-Step Solver) API
-app.post("/api/ai/ocr-solve", upload.single("image"), async (req, res) => {
+app.get(["/api/ai/ocr-solve", "/ai/ocr-solve", "/ocr-solve"], (req, res) => {
+  res.json({ status: "ok", endpoint: "/api/ai/ocr-solve", method: "POST" });
+});
+
+app.post(["/api/ai/ocr-solve", "/ai/ocr-solve", "/ocr-solve"], upload.single("image"), async (req, res) => {
   try {
     let imageBase64 = req.body.imageBase64;
     let mimeType = req.body.mimeType || "image/jpeg";
@@ -767,7 +616,11 @@ Provide a structured response:
 });
 
 // 6. Voice Learning Assistant Explanation API
-app.post("/api/ai/voice-explain", async (req, res) => {
+app.get(["/api/ai/voice-explain", "/ai/voice-explain", "/voice-explain"], (req, res) => {
+  res.json({ status: "ok", endpoint: "/api/ai/voice-explain", method: "POST" });
+});
+
+app.post(["/api/ai/voice-explain", "/ai/voice-explain", "/voice-explain"], async (req, res) => {
   try {
     const { question, topic } = req.body;
     if (!question || typeof question !== "string" || !question.trim()) {
