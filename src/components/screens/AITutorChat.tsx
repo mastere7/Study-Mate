@@ -439,8 +439,8 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
       setErrorAlert(null);
     } catch (err: any) {
       console.warn("AI Tutor caught error in component:", err);
-      const errorCode = err?.status || err?.code || 503;
-      const rawErrMsg = err?.message || "";
+      const errorCode = err?.status || err?.code || 500;
+      const rawErrMsg = err?.serverData?.error || err?.message || "";
       const displayMsg = apiService.getErrorMessage(errorCode, rawErrMsg);
 
       setErrorAlert({
@@ -906,11 +906,11 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                               {msg.errorCode === 405
                                 ? "Endpoint Method Notice"
                                 : msg.errorCode === 429
-                                ? "Rate Limit / Traffic Notice"
+                                ? "StudyMate AI is Busy"
                                 : msg.errorCode === 401 || msg.errorCode === 403
                                 ? "Authentication Notice"
                                 : msg.errorCode === 503
-                                ? "High Traffic Demand Detected"
+                                ? "Service Unavailable"
                                 : msg.errorCode === 500
                                 ? "Server Error"
                                 : "Request Notice"}
@@ -923,7 +923,11 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                             </span>
                           </div>
                           <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
-                            {msg.content || "Upstream AI servers experienced temporary high volume. Your complete conversation history and question have been safely kept."}
+                            {msg.content || (msg.errorCode === 429
+                              ? "StudyMate AI is currently busy. Please try again shortly."
+                              : msg.errorCode === 503
+                              ? "StudyMate AI is temporarily unavailable. Please try again shortly."
+                              : "StudyMate AI encountered a temporary server error. Please try again.")}
                           </p>
                           {msg.retryPrompt && (
                             <div className="text-[11px] font-mono bg-white/80 dark:bg-slate-900/80 p-2 rounded-xl text-slate-700 dark:text-slate-300 border border-amber-200/60 dark:border-amber-800/40 truncate">
@@ -1134,12 +1138,14 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                   {errorAlert.code === 405
                     ? "API Method Configuration Notice"
                     : errorAlert.code === 429
-                    ? "Rate limit / traffic notice"
+                    ? "StudyMate AI is busy"
                     : errorAlert.code === 401 || errorAlert.code === 403
                     ? "Authentication notice"
                     : errorAlert.code === 500
-                    ? "Server processing error"
-                    : "High API traffic detected"}
+                    ? "Server error"
+                    : errorAlert.code === 503
+                    ? "Service temporarily unavailable"
+                    : "Notice"}
                 </span>
                 <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                   Chat History Saved

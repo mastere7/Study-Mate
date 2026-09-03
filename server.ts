@@ -161,6 +161,10 @@ app.get(["/api/ai/tutor", "/ai/tutor", "/tutor"], (req, res) => {
 
 app.post(["/api/ai/tutor", "/ai/tutor", "/tutor"], async (req, res) => {
   try {
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: "AI service is not configured" });
+    }
+
     const { prompt, mode, subject, conversationHistory } = req.body || {};
 
     // Validate prompt

@@ -30,7 +30,7 @@ export const apiService = {
       case 404:
         return "StudyMate AI endpoint not found (Code 404).";
       case 500:
-        return "StudyMate AI encountered a temporary server error.";
+        return "StudyMate AI encountered a temporary server error. Please try again.";
       default:
         return `Request failed with status ${status}. Please try again.`;
     }
@@ -40,7 +40,7 @@ export const apiService = {
   askAITutor: async (req: AITutorRequest): Promise<string> => {
     let lastError: any = null;
 
-    // Single request with max 1 fallback attempt for transient server glitches (500/503)
+    // Single request with max 1 fallback attempt for transient server glitches (429/502/503/504)
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await fetch("/api/ai/tutor", {
@@ -70,14 +70,14 @@ export const apiService = {
           customError.code = res.status;
           customError.serverData = data;
 
-          // STRICT NON-RETRY: Do not retry 400, 401, 403, 404, or 405
-          if (
-            res.status === 400 ||
-            res.status === 401 ||
-            res.status === 403 ||
-            res.status === 404 ||
-            res.status === 405
-          ) {
+          // STRICT NON-RETRY: Only retry temporary 429, 502, 503, 504
+          const canRetry =
+            res.status === 429 ||
+            res.status === 502 ||
+            res.status === 503 ||
+            res.status === 504;
+
+          if (!canRetry) {
             throw customError;
           }
           lastError = customError;
@@ -88,9 +88,9 @@ export const apiService = {
         }
       } catch (err: any) {
         lastError = err;
-        // If error is a client/auth/method error (400, 401, 403, 404, 405), never retry
         const s = err?.status || err?.code;
-        if (s === 400 || s === 401 || s === 403 || s === 404 || s === 405) {
+        const canRetry = s === 429 || s === 502 || s === 503 || s === 504;
+        if (!canRetry) {
           throw err;
         }
         if (attempt < 1) {
@@ -99,7 +99,7 @@ export const apiService = {
       }
     }
 
-    throw lastError || new Error("StudyMate AI is temporarily busy. Please try again in a few seconds.");
+    throw lastError || new Error("StudyMate AI encountered a temporary server error. Please try again.");
   },
 
   // 2. Document & PDF Analysis

@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Shared Gemini AI client factory
+// Shared Gemini AI client factory (lazy-loaded on demand, never at module load time)
 export function getGeminiAI(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -24,16 +24,16 @@ export interface ResilienceOptions {
   contents: any;
   config?: any;
   primaryModel?: string;
+  requestId?: string;
 }
 
-// Normalize multi-turn chat contents for Gemini API (alternating user -> model)
+// Normalize multi-turn chat contents for Gemini API
 export function normalizeChatContents(
   history: { role: string; content: string }[] | undefined,
   currentPrompt: string
 ) {
   const cleanPrompt = (currentPrompt || "").trim().substring(0, 8000);
 
-  // If no conversation history, pass string directly for fastest execution
   if (!Array.isArray(history) || history.length === 0) {
     return cleanPrompt || "Hello StudyMate";
   }
@@ -81,56 +81,101 @@ export function normalizeChatContents(
   return contents;
 }
 
-// Helper to classify Gemini errors into standard HTTP status codes
-export function classifyGeminiError(err: any): { status: number; message: string } {
-  const msg = (err?.message || "").toLowerCase();
-  const code = err?.status || err?.code || err?.statusCode;
+// Helper to classify Gemini errors into standard HTTP status codes with category
+export function classifyGeminiError(err: any): { status: number; message: string; category: string } {
+  let parsedCode: number | undefined;
+  let parsedMessage = "";
+  let parsedStatus = "";
+
+  if (typeof err?.message === "string") {
+    try {
+      const parsed = JSON.parse(err.message);
+      if (parsed?.error) {
+        parsedCode = parsed.error.code;
+        parsedMessage = (parsed.error.message || "").toLowerCase();
+        parsedStatus = (parsed.error.status || "").toLowerCase();
+      }
+    } catch {
+      // not a JSON string error
+    }
+  }
+
+  const rawMsg = `${err?.message || ""} ${parsedMessage} ${parsedStatus}`.toLowerCase();
+  const code = err?.status || err?.statusCode || parsedCode || err?.code;
 
   if (
     code === 401 ||
-    code === 403 ||
-    msg.includes("api_key") ||
-    msg.includes("api key") ||
-    msg.includes("unauthenticated") ||
-    msg.includes("permission_denied")
+    rawMsg.includes("api_key") ||
+    rawMsg.includes("api key") ||
+    rawMsg.includes("unauthenticated")
   ) {
     return {
       status: 401,
       message: "StudyMate AI configuration error. Please verify GEMINI_API_KEY in hosting environment variables.",
+      category: "authentication",
     };
   }
 
-  if (code === 404 || msg.includes("not_found") || msg.includes("model not found")) {
+  if (code === 403 || rawMsg.includes("permission_denied") || rawMsg.includes("unregistered callers")) {
+    return {
+      status: 403,
+      message: "StudyMate AI access denied. Please verify GEMINI_API_KEY in hosting environment variables.",
+      category: "permission",
+    };
+  }
+
+  if (code === 404 || rawMsg.includes("not_found") || rawMsg.includes("model not found") || rawMsg.includes("no longer available")) {
     return {
       status: 404,
-      message: "StudyMate AI model or resource not found.",
+      message: "StudyMate AI model not found or currently unavailable.",
+      category: "model_not_found",
     };
   }
 
-  if (code === 400 || msg.includes("invalid argument") || msg.includes("bad request")) {
+  if (code === 400 || rawMsg.includes("invalid argument") || rawMsg.includes("bad request")) {
     return {
       status: 400,
       message: "Invalid question parameters. Please check your prompt.",
+      category: "invalid_request",
     };
   }
 
-  if (code === 429 || msg.includes("resource_exhausted") || msg.includes("rate limit") || msg.includes("quota")) {
+  if (code === 429 || rawMsg.includes("resource_exhausted") || rawMsg.includes("rate limit") || rawMsg.includes("quota")) {
     return {
       status: 429,
-      message: "StudyMate AI is temporarily busy. Please try again shortly.",
+      message: "StudyMate AI is currently busy. Please try again shortly.",
+      category: "rate_limit",
     };
   }
 
-  if (code === 503 || code === 502 || code === 504 || msg.includes("unavailable") || msg.includes("deadline")) {
+  if (code === 502 || rawMsg.includes("bad gateway")) {
+    return {
+      status: 502,
+      message: "Bad upstream response from AI provider.",
+      category: "bad_gateway",
+    };
+  }
+
+  if (code === 503 || rawMsg.includes("unavailable") || rawMsg.includes("high demand")) {
     return {
       status: 503,
       message: "StudyMate AI is temporarily unavailable. Please try again shortly.",
+      category: "service_unavailable",
+    };
+  }
+
+  if (code === 504 || rawMsg.includes("deadline") || rawMsg.includes("timeout")) {
+    return {
+      status: 504,
+      message: "Upstream AI request timed out.",
+      category: "timeout",
     };
   }
 
   return {
     status: 500,
-    message: err?.message || "StudyMate AI encountered a temporary server error.",
+    message: "StudyMate AI encountered a temporary server error. Please try again.",
+    category: "internal_server_error",
   };
 }
 
@@ -146,12 +191,13 @@ export async function generateContentWithResilience(
   }
 
   let lastError: any = null;
+  const reqId = options.requestId || "req";
 
   for (let i = 0; i < modelsToTry.length; i++) {
     const model = modelsToTry[i];
     try {
       if (i > 0) {
-        // Small backoff before single fallback attempt
+        console.log(`[AI Tutor][${reqId}] Attempting fallback model: ${model}`);
         await new Promise((r) => setTimeout(r, 400));
       }
 
@@ -161,7 +207,7 @@ export async function generateContentWithResilience(
         config: options.config,
       });
 
-      if (response && response.text) {
+      if (response) {
         return response;
       }
     } catch (err: any) {
@@ -169,12 +215,19 @@ export async function generateContentWithResilience(
       const classified = classifyGeminiError(err);
       err.status = classified.status;
 
-      // Never retry 400, 401, 403, or 404
-      if (classified.status === 400 || classified.status === 401 || classified.status === 403 || classified.status === 404) {
+      // STRICT RETRY RULE: Only retry 429, 502, 503, 504
+      const isRetryable =
+        classified.status === 429 ||
+        classified.status === 502 ||
+        classified.status === 503 ||
+        classified.status === 504;
+
+      if (!isRetryable) {
+        console.warn(`[AI Tutor][${reqId}] Non-retryable error on model ${model} (status: ${classified.status}, category: ${classified.category}): ${err.message}`);
         throw err;
       }
 
-      console.warn(`[Gemini API Warning] Model ${model} failed with ${classified.status}: ${err.message}.`);
+      console.warn(`[AI Tutor][${reqId}] Temporary error on model ${model} (status: ${classified.status}, category: ${classified.category}). Will attempt fallback if available.`);
     }
   }
 

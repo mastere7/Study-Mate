@@ -8,14 +8,15 @@ import { setCorsHeaders, parseRequestBody } from "../../src/server/serverless-ut
 
 // Vercel Serverless Function: POST & GET /api/ai/tutor
 export default async function handler(req: any, res: any) {
+  const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
   setCorsHeaders(res);
 
-  // Preflight
+  // Preflight OPTIONS support
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
 
-  // GET Health / Discovery
+  // GET Health / Discovery endpoint
   if (req.method === "GET") {
     return res.status(200).json({
       status: "ok",
@@ -27,32 +28,54 @@ export default async function handler(req: any, res: any) {
     });
   }
 
-  // Reject all other non-POST methods with 405
+  // Reject non-POST methods with 405
   if (req.method !== "POST") {
     return res.status(405).json({
       error: "Method Not Allowed",
     });
   }
 
-  // Process POST request
-  try {
-    const body = await parseRequestBody(req);
-    const { prompt, mode, subject, conversationHistory } = body || {};
+  console.log(`[AI Tutor][${requestId}] Request received`);
 
-    // Validate prompt
+  // Ensure Gemini API key is configured before processing
+  if (!process.env.GEMINI_API_KEY) {
+    console.error(`[AI Tutor][${requestId}] Gemini request failed: 500`, {
+      status: 500,
+      message: "AI service is not configured",
+      category: "configuration",
+    });
+    return res.status(500).json({
+      error: "AI service is not configured",
+    });
+  }
+
+  const startTime = Date.now();
+
+  try {
+    // 1. Request Body Parsing
+    const body = await parseRequestBody(req);
+    const { prompt, mode, subject, conversationHistory = [] } = body || {};
+
+    // 2. Validate Prompt
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      console.warn(`[AI Tutor][${requestId}] Request validation failed: Missing or empty prompt`);
       return res.status(400).json({ error: "Please check your question and try again." });
     }
 
     if (prompt.length > 8000) {
+      console.warn(`[AI Tutor][${requestId}] Request validation failed: Prompt exceeds 8,000 characters`);
       return res.status(400).json({ error: "Question is too long. Please limit prompts to 8,000 characters." });
     }
 
-    // Validate mode & subject
+    // 3. Validate Mode & Subject
     const validModes = ["standard", "eli5", "detailed", "code", "solver", "summary"];
     const sanitizedMode = validModes.includes(mode) ? mode : "standard";
     const sanitizedSubject = typeof subject === "string" ? subject.substring(0, 200) : "";
+    const safeHistory = Array.isArray(conversationHistory) ? conversationHistory.slice(-10) : [];
 
+    console.log(`[AI Tutor][${requestId}] Request validation passed (mode: ${sanitizedMode}, subject: ${sanitizedSubject || "General"})`);
+
+    // 4. Initialize Gemini client on demand (never at module load)
     const ai = getGeminiAI();
 
     let systemInstruction = `You are "StudyMate AI", an expert, encouraging, empathetic personal tutor and study companion for students.
@@ -80,7 +103,10 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
       systemInstruction += ` The context for this query is the subject: ${sanitizedSubject}.`;
     }
 
-    const contents = normalizeChatContents(conversationHistory, prompt);
+    const contents = normalizeChatContents(safeHistory, prompt);
+
+    // 5. Execute Gemini Request
+    console.log(`[AI Tutor][${requestId}] Gemini request started`);
 
     const response = await generateContentWithResilience(ai, {
       contents: contents,
@@ -89,15 +115,45 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
         temperature: 0.7,
         maxOutputTokens: sanitizedMode === "detailed" ? 3000 : 2048,
       },
+      requestId,
     });
 
+    // 6. Safe Response Extraction
+    let responseText = "";
+    try {
+      if (typeof response?.text === "string") {
+        responseText = response.text;
+      } else if (Array.isArray(response?.candidates) && response.candidates[0]?.content?.parts) {
+        responseText = response.candidates[0].content.parts.map((p: any) => p.text || "").join("\n");
+      }
+    } catch (textErr: any) {
+      console.warn(`[AI Tutor][${requestId}] Error reading response.text:`, textErr?.message);
+    }
+
+    if (!responseText) {
+      throw new Error("Received empty response from study assistant.");
+    }
+
+    const duration = Date.now() - startTime;
+    console.log(`[AI Tutor][${requestId}] Gemini response received`);
+    console.log(`[AI Tutor][${requestId}] Request completed in ${duration}ms`);
+
     return res.status(200).json({
-      text: response.text || "I'm here to help! Please clarify or try asking another study question.",
+      text: responseText,
       isFallback: false,
     });
   } catch (error: any) {
-    console.error("Error in /api/ai/tutor handler:", error);
+    const duration = Date.now() - startTime;
     const classified = classifyGeminiError(error);
+
+    console.error(`[AI Tutor][${requestId}] Gemini request failed: ${classified.status}`, {
+      status: classified.status,
+      message: classified.message,
+      category: classified.category,
+      durationMs: duration,
+    });
+    console.log(`[AI Tutor][${requestId}] Request completed in ${duration}ms`);
+
     return res.status(classified.status).json({
       error: classified.message,
       status: classified.status,
