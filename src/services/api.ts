@@ -17,7 +17,7 @@ export const apiService = {
       case 405:
         return "StudyMate AI endpoint configuration error. Please try again later.";
       case 429:
-        return "StudyMate AI is temporarily busy. Please try again shortly.";
+        return "StudyMate AI is currently busy. Please try again shortly.";
       case 503:
       case 502:
       case 504:

@@ -77,8 +77,8 @@ setInterval(() => {
 }, 60000);
 
 function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
-  // Allow health checks without rate limiting
-  if (req.path === "/api/health") {
+  // Allow non-POST requests and health checks without rate limiting
+  if (req.method !== "POST" || req.path === "/api/health") {
     return next();
   }
 
@@ -140,12 +140,40 @@ import {
 
 // Health check endpoint (GET /api/health)
 app.all(["/api/health", "/health", "/api"], (req, res) => {
-  res.json({
-    status: "ok",
-    service: "StudyMate API",
-    hasApiKey: !!process.env.GEMINI_API_KEY,
-    timestamp: new Date().toISOString(),
-  });
+  if (req.method !== "GET" && req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+
+  const hasApiKey = !!process.env.GEMINI_API_KEY;
+
+  if (!hasApiKey) {
+    return res.status(500).json({
+      status: "error",
+      service: "StudyMate API",
+      hasApiKey: false,
+      error: "GEMINI_API_KEY is not configured",
+    });
+  }
+
+  try {
+    const ai = getGeminiAI();
+    return res.status(200).json({
+      status: "ok",
+      service: "StudyMate API",
+      hasApiKey: true,
+      geminiClient: "initialized",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Gemini initialization error:", error);
+    return res.status(500).json({
+      status: "error",
+      service: "StudyMate API",
+      hasApiKey: true,
+      geminiClient: "failed",
+      error: error?.message || "Unknown Gemini initialization error",
+    });
+  }
 });
 
 // 1. AI Tutor Assistant API
@@ -214,7 +242,6 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
       contents: contents,
       config: {
         systemInstruction,
-        temperature: 0.7,
         maxOutputTokens: sanitizedMode === "detailed" ? 3000 : 2048,
       },
     });
@@ -231,6 +258,11 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
       status: classified.status,
     });
   }
+});
+
+// Reject other HTTP methods on /api/ai/tutor with 405 Method Not Allowed
+app.all(["/api/ai/tutor", "/ai/tutor", "/tutor"], (req, res) => {
+  res.status(405).json({ error: "Method Not Allowed" });
 });
 
 // 2. Document & PDF & Word Analysis API
@@ -330,7 +362,6 @@ app.post(["/api/ai/analyze-document", "/ai/analyze-document", "/analyze-document
         contents: { parts },
         config: {
           systemInstruction: "You are an expert document research assistant and academic summarizer.",
-          temperature: 0.4,
           maxOutputTokens: 2500,
         },
       });
@@ -605,7 +636,6 @@ Provide a structured response:
       contents: { parts: [imagePart, textPart] },
       config: {
         systemInstruction: "You are a master academic OCR scanner and step-by-step math & science tutor.",
-        temperature: 0.2,
         maxOutputTokens: 2048,
       },
     });
@@ -640,7 +670,6 @@ app.post(["/api/ai/voice-explain", "/ai/voice-explain", "/voice-explain"], async
       contents: `Provide a concise, conversational 3 to 4 sentence explanation suitable for reading aloud to a student asking: "${cleanQuestion}". Topic context: ${cleanTopic}.`,
       config: {
         systemInstruction: "You are an enthusiastic, clear voice tutor and radio podcast host for students.",
-        temperature: 0.6,
         maxOutputTokens: 500,
       },
     });

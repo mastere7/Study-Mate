@@ -51,7 +51,6 @@ Provide a structured response:
       contents: { parts: [imagePart, textPart] },
       config: {
         systemInstruction: "You are a master academic OCR scanner and step-by-step math & science tutor.",
-        temperature: 0.2,
         maxOutputTokens: 2048,
       },
     });

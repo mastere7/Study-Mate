@@ -64,7 +64,6 @@ export default async function handler(req: any, res: any) {
       contents: { parts },
       config: {
         systemInstruction: "You are an expert document research assistant and academic summarizer.",
-        temperature: 0.4,
         maxOutputTokens: 2500,
       },
     });

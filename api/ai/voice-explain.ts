@@ -37,7 +37,6 @@ export default async function handler(req: any, res: any) {
       contents: `Provide a concise, conversational 3 to 4 sentence explanation suitable for reading aloud to a student asking: "${cleanQuestion}". Topic context: ${cleanTopic}.`,
       config: {
         systemInstruction: "You are an enthusiastic, clear voice tutor and radio podcast host for students.",
-        temperature: 0.6,
         maxOutputTokens: 500,
       },
     });

@@ -3,6 +3,7 @@ import {
   normalizeChatContents,
   generateContentWithResilience,
   classifyGeminiError,
+  PRIMARY_MODEL,
 } from "../../src/server/gemini";
 import { setCorsHeaders, parseRequestBody } from "../../src/server/serverless-utils";
 
@@ -105,14 +106,13 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
 
     const contents = normalizeChatContents(safeHistory, prompt);
 
-    // 5. Execute Gemini Request
-    console.log(`[AI Tutor][${requestId}] Gemini request started`);
+    // 5. Execute Gemini Request (Temperature removed for Gemini 3.7 compatibility)
+    console.log(`[AI Tutor][${requestId}] Gemini request started (model: ${PRIMARY_MODEL})`);
 
     const response = await generateContentWithResilience(ai, {
       contents: contents,
       config: {
         systemInstruction,
-        temperature: 0.7,
         maxOutputTokens: sanitizedMode === "detailed" ? 3000 : 2048,
       },
       requestId,
@@ -121,35 +121,56 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
     // 6. Safe Response Extraction
     let responseText = "";
     try {
-      if (typeof response?.text === "string") {
-        responseText = response.text;
-      } else if (Array.isArray(response?.candidates) && response.candidates[0]?.content?.parts) {
-        responseText = response.candidates[0].content.parts.map((p: any) => p.text || "").join("\n");
+      if (typeof response?.text === "string" && response.text.trim()) {
+        responseText = response.text.trim();
+      } else if (Array.isArray(response?.candidates) && response.candidates.length > 0) {
+        const candidate = response.candidates[0];
+        if (Array.isArray(candidate?.content?.parts)) {
+          responseText = candidate.content.parts
+            .map((p: any) => p?.text || "")
+            .join("\n")
+            .trim();
+        }
       }
     } catch (textErr: any) {
       console.warn(`[AI Tutor][${requestId}] Error reading response.text:`, textErr?.message);
     }
 
     if (!responseText) {
-      throw new Error("Received empty response from study assistant.");
+      const duration = Date.now() - startTime;
+      console.error(`[AI Tutor][${requestId}] Empty response received from Gemini model`, {
+        status: 502,
+        category: "bad_gateway",
+        message: "Received empty response from study assistant.",
+        model: (response as any)?.model || PRIMARY_MODEL,
+        durationMs: duration,
+      });
+      return res.status(502).json({
+        error: "Bad upstream response from AI provider.",
+        status: 502,
+      });
     }
 
     const duration = Date.now() - startTime;
+    const isFallback = Boolean((response as any)?.isFallback);
     console.log(`[AI Tutor][${requestId}] Gemini response received`);
-    console.log(`[AI Tutor][${requestId}] Request completed in ${duration}ms`);
+    console.log(`[AI Tutor][${requestId}] Request completed in ${duration}ms (isFallback: ${isFallback})`);
 
     return res.status(200).json({
       text: responseText,
-      isFallback: false,
+      isFallback,
     });
   } catch (error: any) {
     const duration = Date.now() - startTime;
     const classified = classifyGeminiError(error);
+    const failedModel = error?.failedModel || PRIMARY_MODEL;
 
+    // Log safely without sensitive data (no API keys, no private conversation)
     console.error(`[AI Tutor][${requestId}] Gemini request failed: ${classified.status}`, {
       status: classified.status,
-      message: classified.message,
       category: classified.category,
+      message: classified.message,
+      model: failedModel,
       durationMs: duration,
     });
     console.log(`[AI Tutor][${requestId}] Request completed in ${duration}ms`);
