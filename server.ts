@@ -139,17 +139,16 @@ import {
 // -------------------------------------------------------------
 
 // Health check endpoint (GET /api/health)
-app.all(["/api/health", "/health", "/api"], (req, res) => {
+app.all(["/api/health", "/health", "/api"], async (req, res) => {
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const hasApiKey = !!process.env.GEMINI_API_KEY;
+  const hasApiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
 
   if (!hasApiKey) {
     return res.status(500).json({
       status: "error",
-      service: "StudyMate API",
       hasApiKey: false,
       error: "GEMINI_API_KEY is not configured",
     });
@@ -157,21 +156,40 @@ app.all(["/api/health", "/health", "/api"], (req, res) => {
 
   try {
     const ai = getGeminiAI();
+
+    // Perform minimal real connectivity test with PRIMARY_MODEL
+    await ai.models.generateContent({
+      model: PRIMARY_MODEL,
+      contents: "Reply with exactly: StudyMate OK",
+      config: {
+        maxOutputTokens: 20,
+      },
+    });
+
     return res.status(200).json({
       status: "ok",
-      service: "StudyMate API",
       hasApiKey: true,
-      geminiClient: "initialized",
+      geminiConnected: true,
+      model: PRIMARY_MODEL,
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error("Gemini initialization error:", error);
-    return res.status(500).json({
+    console.error("[Health Check] Gemini connectivity test failed:", {
+      status: error?.status,
+      message: error?.message,
+      model: PRIMARY_MODEL,
+    });
+
+    const classified = classifyGeminiError(error);
+
+    return res.status(classified.status).json({
       status: "error",
-      service: "StudyMate API",
       hasApiKey: true,
-      geminiClient: "failed",
-      error: error?.message || "Unknown Gemini initialization error",
+      geminiConnected: false,
+      model: PRIMARY_MODEL,
+      error: classified.message,
+      category: classified.category,
+      timestamp: new Date().toISOString(),
     });
   }
 });
@@ -189,8 +207,11 @@ app.get(["/api/ai/tutor", "/ai/tutor", "/tutor"], (req, res) => {
 
 app.post(["/api/ai/tutor", "/ai/tutor", "/tutor"], async (req, res) => {
   try {
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ error: "AI service is not configured" });
+    if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
+      return res.status(500).json({
+        error: "GEMINI_API_KEY is not configured",
+        status: 500,
+      });
     }
 
     const { prompt, mode, subject, conversationHistory } = req.body || {};
@@ -246,9 +267,10 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
       },
     });
 
+    const isFallback = Boolean((response as any)?.isFallback);
     return res.json({
       text: response.text || "I'm here to help! Please clarify or try asking another study question.",
-      isFallback: false,
+      isFallback,
     });
   } catch (error: any) {
     console.error("Error in /api/ai/tutor:", error);

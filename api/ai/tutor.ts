@@ -39,14 +39,15 @@ export default async function handler(req: any, res: any) {
   console.log(`[AI Tutor][${requestId}] Request received`);
 
   // Ensure Gemini API key is configured before processing
-  if (!process.env.GEMINI_API_KEY) {
+  if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
     console.error(`[AI Tutor][${requestId}] Gemini request failed: 500`, {
       status: 500,
-      message: "AI service is not configured",
+      message: "GEMINI_API_KEY is not configured",
       category: "configuration",
     });
     return res.status(500).json({
-      error: "AI service is not configured",
+      error: "GEMINI_API_KEY is not configured",
+      status: 500,
     });
   }
 

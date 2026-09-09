@@ -17,8 +17,8 @@ export function getGeminiAI(): GoogleGenAI {
 }
 
 // Configurable primary model with safe fallback
-export const PRIMARY_MODEL = process.env.GEMINI_MODEL || "gemini-3.7-flash";
-export const FALLBACK_MODEL = "gemini-3.6-flash";
+export const PRIMARY_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+export const FALLBACK_MODEL = PRIMARY_MODEL === "gemini-3.7-flash" ? "gemini-flash-latest" : "gemini-3.7-flash";
 
 export interface ResilienceOptions {
   contents: any;
@@ -115,6 +115,12 @@ export function classifyGeminiError(err: any): { status: number; message: string
         if (typeof parsed.error.code === "number") parsedCode = parsedCode || parsed.error.code;
         if (typeof parsed.error.message === "string") parsedMessage = `${parsedMessage} ${parsed.error.message.toLowerCase()}`;
         if (typeof parsed.error.status === "string") parsedStatus = `${parsedStatus} ${parsed.error.status.toLowerCase()}`;
+        if (Array.isArray(parsed.error.details)) {
+          for (const d of parsed.error.details) {
+            if (typeof d?.reason === "string") parsedMessage = `${parsedMessage} ${d.reason.toLowerCase()}`;
+            if (typeof d?.message === "string") parsedMessage = `${parsedMessage} ${d.message.toLowerCase()}`;
+          }
+        }
       }
     } catch {
       // not a JSON string error
@@ -124,13 +130,14 @@ export function classifyGeminiError(err: any): { status: number; message: string
   const rawMsg = `${err?.message || ""} ${parsedMessage} ${parsedStatus} ${err?.statusText || ""}`.toLowerCase();
   const rawStatus = (err?.status || err?.statusCode || parsedCode || err?.code || "").toString().toLowerCase();
 
-  // UNAUTHENTICATED / 401
+  // 1. UNAUTHENTICATED / 401 - Invalid API key or unauthenticated
   if (
     rawStatus === "401" ||
-    rawMsg.includes("unauthenticated") ||
-    rawMsg.includes("invalid api key") ||
     rawMsg.includes("api_key_invalid") ||
-    rawMsg.includes("api key not valid")
+    rawMsg.includes("api key not valid") ||
+    rawMsg.includes("invalid api key") ||
+    rawMsg.includes("api_key_expired") ||
+    rawMsg.includes("unauthenticated")
   ) {
     return {
       status: 401,
@@ -139,12 +146,15 @@ export function classifyGeminiError(err: any): { status: number; message: string
     };
   }
 
-  // PERMISSION_DENIED / 403
+  // 2. PERMISSION_DENIED / 403 - Permission or access problem
   if (
     rawStatus === "403" ||
     rawMsg.includes("permission_denied") ||
     rawMsg.includes("unregistered callers") ||
-    rawMsg.includes("caller without established identity")
+    rawMsg.includes("caller without established identity") ||
+    rawMsg.includes("access_token_scope_insufficient") ||
+    rawMsg.includes("permission denied") ||
+    rawMsg.includes("forbidden")
   ) {
     return {
       status: 403,
@@ -153,13 +163,14 @@ export function classifyGeminiError(err: any): { status: number; message: string
     };
   }
 
-  // NOT_FOUND / 404
+  // 3. NOT_FOUND / 404 - Model not found or unavailable
   if (
     rawStatus === "404" ||
     rawMsg.includes("not_found") ||
     rawMsg.includes("model not found") ||
     rawMsg.includes("no longer available") ||
-    rawMsg.includes("is not found")
+    rawMsg.includes("is not found") ||
+    rawMsg.includes("models/")
   ) {
     return {
       status: 404,
@@ -168,7 +179,23 @@ export function classifyGeminiError(err: any): { status: number; message: string
     };
   }
 
-  // METHOD_NOT_ALLOWED / 405
+  // 4. RESOURCE_EXHAUSTED / 429 - Quota or rate limit
+  if (
+    rawStatus === "429" ||
+    rawMsg.includes("resource_exhausted") ||
+    rawMsg.includes("rate limit") ||
+    rawMsg.includes("quota exceeded") ||
+    rawMsg.includes("too many requests") ||
+    rawMsg.includes("quota")
+  ) {
+    return {
+      status: 429,
+      message: "StudyMate AI is currently busy. Please try again shortly.",
+      category: "rate_limit",
+    };
+  }
+
+  // 5. METHOD_NOT_ALLOWED / 405
   if (rawStatus === "405" || rawMsg.includes("method not allowed")) {
     return {
       status: 405,
@@ -177,7 +204,7 @@ export function classifyGeminiError(err: any): { status: number; message: string
     };
   }
 
-  // INVALID_ARGUMENT / 400
+  // 6. INVALID_ARGUMENT / 400 - Invalid request / prompt
   if (
     rawStatus === "400" ||
     rawMsg.includes("invalid_argument") ||
@@ -193,22 +220,7 @@ export function classifyGeminiError(err: any): { status: number; message: string
     };
   }
 
-  // RESOURCE_EXHAUSTED / 429
-  if (
-    rawStatus === "429" ||
-    rawMsg.includes("resource_exhausted") ||
-    rawMsg.includes("rate limit") ||
-    rawMsg.includes("quota exceeded") ||
-    rawMsg.includes("too many requests")
-  ) {
-    return {
-      status: 429,
-      message: "StudyMate AI is currently busy. Please try again shortly.",
-      category: "rate_limit",
-    };
-  }
-
-  // BAD_GATEWAY / 502
+  // 7. BAD_GATEWAY / 502
   if (rawStatus === "502" || rawMsg.includes("bad gateway")) {
     return {
       status: 502,
@@ -217,12 +229,13 @@ export function classifyGeminiError(err: any): { status: number; message: string
     };
   }
 
-  // UNAVAILABLE / 503
+  // 8. UNAVAILABLE / 503
   if (
     rawStatus === "503" ||
     rawMsg.includes("unavailable") ||
     rawMsg.includes("high demand") ||
-    rawMsg.includes("service unavailable")
+    rawMsg.includes("service unavailable") ||
+    rawMsg.includes("overloaded")
   ) {
     return {
       status: 503,
@@ -231,7 +244,7 @@ export function classifyGeminiError(err: any): { status: number; message: string
     };
   }
 
-  // DEADLINE_EXCEEDED / 504
+  // 9. DEADLINE_EXCEEDED / 504
   if (
     rawStatus === "504" ||
     rawMsg.includes("deadline_exceeded") ||
@@ -296,14 +309,15 @@ export async function generateContentWithResilience(
       err.classifiedMessage = classified.message;
       err.failedModel = model;
 
-      // STRICT RETRY RULE: Only retry temporary errors (429, 502, 503, 504)
+      // STRICT RETRY RULE: Retry model unavailable (404) or temporary errors (429, 502, 503, 504)
       const isRetryable =
+        classified.status === 404 ||
         classified.status === 429 ||
         classified.status === 502 ||
         classified.status === 503 ||
         classified.status === 504;
 
-      if (!isRetryable) {
+      if (!isRetryable || i === modelsToTry.length - 1) {
         console.warn(
           `[AI Tutor][${reqId}] Non-retryable error on model ${model} (status: ${classified.status}, category: ${classified.category}, duration: ${modelDuration}ms): ${err.message}`
         );
@@ -311,7 +325,7 @@ export async function generateContentWithResilience(
       }
 
       console.warn(
-        `[AI Tutor][${reqId}] Temporary error on model ${model} (status: ${classified.status}, category: ${classified.category}, duration: ${modelDuration}ms). Will attempt fallback if available.`
+        `[AI Tutor][${reqId}] Retryable error on model ${model} (status: ${classified.status}, category: ${classified.category}, duration: ${modelDuration}ms). Attempting fallback model.`
       );
     }
   }

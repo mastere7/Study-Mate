@@ -9,26 +9,30 @@ export interface AITutorRequest {
 
 export const apiService = {
   // Helper to format clear error messages based on HTTP status code
-  getErrorMessage: (status: number, serverError?: string): string => {
+  getErrorMessage: (status: number | string, serverError?: string): string => {
     if (serverError && typeof serverError === "string" && serverError.trim().length > 0) {
       return serverError;
     }
-    switch (status) {
+    const statusCode = typeof status === "string" ? parseInt(status, 10) : status;
+    switch (statusCode) {
+      case 401:
+        return "StudyMate AI configuration error. Please verify GEMINI_API_KEY in hosting environment variables.";
+      case 403:
+        return "StudyMate AI access denied. Please verify GEMINI_API_KEY permissions.";
+      case 404:
+        return "StudyMate AI model unavailable or endpoint not found.";
       case 405:
         return "StudyMate AI endpoint configuration error. Please try again later.";
       case 429:
-        return "StudyMate AI is currently busy. Please try again shortly.";
-      case 503:
+        return "StudyMate AI quota or rate limit reached. Please try again shortly.";
       case 502:
-      case 504:
+        return "Bad upstream response from AI provider. Please try again.";
+      case 503:
         return "StudyMate AI is temporarily unavailable. Please try again shortly.";
-      case 401:
-      case 403:
-        return "StudyMate AI configuration error. Please verify GEMINI_API_KEY in environment variables.";
+      case 504:
+        return "Upstream AI request timed out. Please try again.";
       case 400:
         return "Please check your question and try again.";
-      case 404:
-        return "StudyMate AI endpoint not found (Code 404).";
       case 500:
         return "StudyMate AI encountered a temporary server error. Please try again.";
       default:

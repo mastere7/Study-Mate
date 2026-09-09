@@ -903,17 +903,27 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200">
-                              {msg.errorCode === 405
-                                ? "Endpoint Method Notice"
+                              {msg.errorCode === 401
+                                ? "API Key Configuration Error"
+                                : msg.errorCode === 403
+                                ? "Access / Permission Denied"
+                                : msg.errorCode === 404
+                                ? "Model Unavailable"
+                                : msg.errorCode === 400
+                                ? "Invalid Question"
+                                : msg.errorCode === 405
+                                ? "Method Not Allowed"
                                 : msg.errorCode === 429
-                                ? "StudyMate AI is Busy"
-                                : msg.errorCode === 401 || msg.errorCode === 403
-                                ? "Authentication Notice"
+                                ? "Quota or Rate Limit Reached"
+                                : msg.errorCode === 502
+                                ? "Bad Gateway"
                                 : msg.errorCode === 503
                                 ? "Service Unavailable"
+                                : msg.errorCode === 504
+                                ? "Request Timeout"
                                 : msg.errorCode === 500
                                 ? "Server Error"
-                                : "Request Notice"}
+                                : "Notice"}
                             </h4>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                               ✓ Chat History Preserved
@@ -923,11 +933,7 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
                             </span>
                           </div>
                           <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
-                            {msg.content || (msg.errorCode === 429
-                              ? "StudyMate AI is currently busy. Please try again shortly."
-                              : msg.errorCode === 503
-                              ? "StudyMate AI is temporarily unavailable. Please try again shortly."
-                              : "StudyMate AI encountered a temporary server error. Please try again.")}
+                            {msg.content || apiService.getErrorMessage(msg.errorCode || 500)}
                           </p>
                           {msg.retryPrompt && (
                             <div className="text-[11px] font-mono bg-white/80 dark:bg-slate-900/80 p-2 rounded-xl text-slate-700 dark:text-slate-300 border border-amber-200/60 dark:border-amber-800/40 truncate">
@@ -1135,16 +1141,26 @@ In practice, breaking complex problems down into step 1 (identify knowns), step 
               <div className="flex items-center gap-2 min-w-0">
                 <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                 <span className="font-bold truncate">
-                  {errorAlert.code === 405
+                  {errorAlert.code === 401
+                    ? "API Key Configuration Error"
+                    : errorAlert.code === 403
+                    ? "Access / Permission Denied"
+                    : errorAlert.code === 404
+                    ? "Model Unavailable"
+                    : errorAlert.code === 400
+                    ? "Invalid Question"
+                    : errorAlert.code === 405
                     ? "API Method Configuration Notice"
                     : errorAlert.code === 429
-                    ? "StudyMate AI is busy"
-                    : errorAlert.code === 401 || errorAlert.code === 403
-                    ? "Authentication notice"
-                    : errorAlert.code === 500
-                    ? "Server error"
+                    ? "Quota or Rate Limit Reached"
+                    : errorAlert.code === 502
+                    ? "Bad Upstream Response"
                     : errorAlert.code === 503
-                    ? "Service temporarily unavailable"
+                    ? "Service Temporarily Unavailable"
+                    : errorAlert.code === 504
+                    ? "Request Timeout"
+                    : errorAlert.code === 500
+                    ? "Server Error"
                     : "Notice"}
                 </span>
                 <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
