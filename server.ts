@@ -21,6 +21,19 @@ const PORT = 3000;
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
+// JSON parsing error handler to ensure JSON responses instead of HTML error pages
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof SyntaxError && "body" in err) {
+    return res.status(400).json({
+      status: 400,
+      error: "Invalid JSON request body format.",
+      category: "invalid_request",
+      timestamp: new Date().toISOString(),
+    });
+  }
+  next(err);
+});
+
 // Enable CORS and preflight handling
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
@@ -209,8 +222,10 @@ app.post(["/api/ai/tutor", "/ai/tutor", "/tutor"], async (req, res) => {
   try {
     if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
       return res.status(500).json({
-        error: "GEMINI_API_KEY is not configured",
         status: 500,
+        error: "GEMINI_API_KEY is not configured",
+        category: "configuration",
+        timestamp: new Date().toISOString(),
       });
     }
 
@@ -218,11 +233,21 @@ app.post(["/api/ai/tutor", "/ai/tutor", "/tutor"], async (req, res) => {
 
     // Validate prompt
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-      return res.status(400).json({ error: "A valid study question prompt is required." });
+      return res.status(400).json({
+        status: 400,
+        error: "A valid study question prompt is required.",
+        category: "invalid_request",
+        timestamp: new Date().toISOString(),
+      });
     }
 
     if (prompt.length > 8000) {
-      return res.status(400).json({ error: "Question is too long. Please limit prompts to 8,000 characters." });
+      return res.status(400).json({
+        status: 400,
+        error: "Question is too long. Please limit prompts to 8,000 characters.",
+        category: "invalid_request",
+        timestamp: new Date().toISOString(),
+      });
     }
 
     // Validate mode
@@ -276,15 +301,22 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
     console.error("Error in /api/ai/tutor:", error);
     const classified = classifyGeminiError(error);
     return res.status(classified.status).json({
-      error: classified.message,
       status: classified.status,
+      error: classified.message,
+      category: classified.category,
+      timestamp: new Date().toISOString(),
     });
   }
 });
 
 // Reject other HTTP methods on /api/ai/tutor with 405 Method Not Allowed
 app.all(["/api/ai/tutor", "/ai/tutor", "/tutor"], (req, res) => {
-  res.status(405).json({ error: "Method Not Allowed" });
+  res.status(405).json({
+    status: 405,
+    error: "Method Not Allowed",
+    category: "method_not_allowed",
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // 2. Document & PDF & Word Analysis API

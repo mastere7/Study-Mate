@@ -158,7 +158,7 @@ export function classifyGeminiError(err: any): { status: number; message: string
   ) {
     return {
       status: 403,
-      message: "StudyMate AI access denied. Please verify GEMINI_API_KEY in hosting environment variables.",
+      message: "StudyMate AI access denied. Please verify GEMINI_API_KEY permissions.",
       category: "permission",
     };
   }
@@ -190,7 +190,7 @@ export function classifyGeminiError(err: any): { status: number; message: string
   ) {
     return {
       status: 429,
-      message: "StudyMate AI is currently busy. Please try again shortly.",
+      message: "StudyMate AI quota or rate limit reached. Please try again shortly.",
       category: "rate_limit",
     };
   }
@@ -261,7 +261,7 @@ export function classifyGeminiError(err: any): { status: number; message: string
 
   return {
     status: 500,
-    message: "StudyMate AI encountered a temporary server error. Please try again.",
+    message: "StudyMate AI encountered an unexpected server error. Please try again.",
     category: "internal_server_error",
   };
 }

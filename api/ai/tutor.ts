@@ -7,6 +7,39 @@ import {
 } from "../../src/server/gemini";
 import { setCorsHeaders, parseRequestBody } from "../../src/server/serverless-utils";
 
+/**
+ * Strips sensitive patterns (such as Google API keys, Bearer tokens, or credentials)
+ * to ensure that no secret is ever exposed in error responses or server logs.
+ */
+function sanitizeErrorMessage(msg: string): string {
+  if (!msg || typeof msg !== "string") return "An error occurred while processing your request.";
+  return msg
+    .replace(/AIzaSy[A-Za-z0-9_-]{33}/g, "[REDACTED_API_KEY]")
+    .replace(/key=[A-Za-z0-9_%-]+/gi, "key=[REDACTED]")
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]")
+    .trim();
+}
+
+/**
+ * Helper to construct and send structured, standard JSON error responses.
+ */
+function sendJsonError(
+  res: any,
+  status: number,
+  errorMessage: string,
+  category: string,
+  extra: Record<string, any> = {}
+) {
+  res.setHeader("Content-Type", "application/json");
+  return res.status(status).json({
+    status,
+    error: sanitizeErrorMessage(errorMessage),
+    category,
+    timestamp: new Date().toISOString(),
+    ...extra,
+  });
+}
+
 // Vercel Serverless Function: POST & GET /api/ai/tutor
 export default async function handler(req: any, res: any) {
   const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
@@ -19,54 +52,82 @@ export default async function handler(req: any, res: any) {
 
   // GET Health / Discovery endpoint
   if (req.method === "GET") {
+    res.setHeader("Content-Type", "application/json");
     return res.status(200).json({
       status: "ok",
       endpoint: "/api/ai/tutor",
       method: "POST",
       message: "StudyMate AI Tutor is active. Send a POST request with JSON body { prompt, mode, subject, conversationHistory }.",
-      hasApiKey: !!process.env.GEMINI_API_KEY,
+      hasApiKey: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()),
       timestamp: new Date().toISOString(),
     });
   }
 
-  // Reject non-POST methods with 405
+  // Reject non-POST methods with 405 Method Not Allowed
   if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Method Not Allowed",
-    });
+    return sendJsonError(
+      res,
+      405,
+      "Method Not Allowed",
+      "method_not_allowed"
+    );
   }
 
   console.log(`[AI Tutor][${requestId}] Request received`);
 
-  // Ensure Gemini API key is configured before processing
+  // Ensure Gemini API key is configured before processing (HTTP 500 configuration error)
   if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
     console.error(`[AI Tutor][${requestId}] Gemini request failed: 500`, {
       status: 500,
       message: "GEMINI_API_KEY is not configured",
       category: "configuration",
     });
-    return res.status(500).json({
-      error: "GEMINI_API_KEY is not configured",
-      status: 500,
-    });
+    return sendJsonError(
+      res,
+      500,
+      "GEMINI_API_KEY is not configured",
+      "configuration"
+    );
   }
 
   const startTime = Date.now();
 
   try {
     // 1. Request Body Parsing
-    const body = await parseRequestBody(req);
+    let body: any;
+    try {
+      body = await parseRequestBody(req);
+    } catch (parseErr: any) {
+      console.warn(`[AI Tutor][${requestId}] Request body parsing failed:`, parseErr?.message);
+      return sendJsonError(
+        res,
+        400,
+        "Invalid JSON request body format.",
+        "invalid_request"
+      );
+    }
+
     const { prompt, mode, subject, conversationHistory = [] } = body || {};
 
-    // 2. Validate Prompt
+    // 2. Validate Prompt (HTTP 400 Bad Request)
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
       console.warn(`[AI Tutor][${requestId}] Request validation failed: Missing or empty prompt`);
-      return res.status(400).json({ error: "Please check your question and try again." });
+      return sendJsonError(
+        res,
+        400,
+        "A valid study question prompt is required.",
+        "invalid_request"
+      );
     }
 
     if (prompt.length > 8000) {
       console.warn(`[AI Tutor][${requestId}] Request validation failed: Prompt exceeds 8,000 characters`);
-      return res.status(400).json({ error: "Question is too long. Please limit prompts to 8,000 characters." });
+      return sendJsonError(
+        res,
+        400,
+        "Question is too long. Please limit prompts to 8,000 characters.",
+        "invalid_request"
+      );
     }
 
     // 3. Validate Mode & Subject
@@ -107,7 +168,7 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
 
     const contents = normalizeChatContents(safeHistory, prompt);
 
-    // 5. Execute Gemini Request (Temperature removed for Gemini 3.7 compatibility)
+    // 5. Execute Gemini Request
     console.log(`[AI Tutor][${requestId}] Gemini request started (model: ${PRIMARY_MODEL})`);
 
     const response = await generateContentWithResilience(ai, {
@@ -146,10 +207,12 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
         model: (response as any)?.model || PRIMARY_MODEL,
         durationMs: duration,
       });
-      return res.status(502).json({
-        error: "Bad upstream response from AI provider.",
-        status: 502,
-      });
+      return sendJsonError(
+        res,
+        502,
+        "Bad upstream response from AI provider.",
+        "bad_gateway"
+      );
     }
 
     const duration = Date.now() - startTime;
@@ -157,6 +220,7 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
     console.log(`[AI Tutor][${requestId}] Gemini response received`);
     console.log(`[AI Tutor][${requestId}] Request completed in ${duration}ms (isFallback: ${isFallback})`);
 
+    res.setHeader("Content-Type", "application/json");
     return res.status(200).json({
       text: responseText,
       isFallback,
@@ -166,19 +230,21 @@ Use clear markdown headers, bold highlights, bullet points, and code blocks for 
     const classified = classifyGeminiError(error);
     const failedModel = error?.failedModel || PRIMARY_MODEL;
 
-    // Log safely without sensitive data (no API keys, no private conversation)
+    // Log safely without sensitive data (never log API keys, private conversations, or prompt bodies)
     console.error(`[AI Tutor][${requestId}] Gemini request failed: ${classified.status}`, {
       status: classified.status,
       category: classified.category,
-      message: classified.message,
+      message: sanitizeErrorMessage(classified.message),
       model: failedModel,
       durationMs: duration,
     });
     console.log(`[AI Tutor][${requestId}] Request completed in ${duration}ms`);
 
-    return res.status(classified.status).json({
-      error: classified.message,
-      status: classified.status,
-    });
+    return sendJsonError(
+      res,
+      classified.status,
+      classified.message,
+      classified.category
+    );
   }
 }
